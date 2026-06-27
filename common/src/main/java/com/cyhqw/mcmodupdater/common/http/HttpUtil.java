@@ -15,12 +15,9 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Thin wrapper over {@link HttpClient} used to talk to Modrinth / CurseForge
- * and to download .jar files.
+ * HTTP 工具。基于 JDK 内置的 {@link HttpClient}（MC 1.20.1 自带 Java 17）。
  *
- * <p>The Java 11+ {@code java.net.http} client is available inside Minecraft's
- * bundled JRE (MC 1.20.1 ships with Java 17), so we don't need a 3rd-party
- * HTTP library.</p>
+ * <p>所有请求都带超时和可选重试。重试仅对网络层异常生效，对 HTTP 4xx/5xx 不重试。</p>
  */
 public final class HttpUtil {
 
@@ -31,59 +28,118 @@ public final class HttpUtil {
 
     private HttpUtil() {}
 
-    /** GET a text response, returns the body, throws on non-2xx. */
-    public static String getString(String url, Map<String, String> headers) throws IOException, InterruptedException {
-        HttpRequest.Builder b = baseGet(url);
-        if (headers != null) headers.forEach(b::header);
-        HttpResponse<String> resp = CLIENT.send(b.build(), HttpResponse.BodyHandlers.ofString());
-        checkResponse(url, resp.statusCode(), resp.body());
-        return resp.body();
-    }
-
+    /** GET 文本响应。使用默认超时，不重试。 */
     public static String getString(String url) throws IOException, InterruptedException {
-        return getString(url, null);
+        return getString(url, null, Constants.HTTP_TIMEOUT_MS, 0);
     }
 
-    /** GET a file, streaming to {@code dest}. Throws on non-2xx. */
-    public static void downloadFile(String url, Path dest) throws IOException, InterruptedException {
-        HttpRequest req = baseGet(url).build();
-        HttpResponse<InputStream> resp = CLIENT.send(req, HttpResponse.BodyHandlers.ofInputStream());
-        if (resp.statusCode() / 100 != 2) {
-            String body = new String(resp.body().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-            throw new IOException("HTTP " + resp.statusCode() + " for " + url + " — " + body);
-        }
-        try (InputStream in = resp.body();
-             java.io.OutputStream out = java.nio.file.Files.newOutputStream(dest)) {
-            byte[] buf = new byte[16384];
-            int n;
-            while ((n = in.read(buf)) != -1) {
-                out.write(buf, 0, n);
+    /** GET 文本响应，自定义请求头。使用默认超时，不重试。 */
+    public static String getString(String url, Map<String, String> headers) throws IOException, InterruptedException {
+        return getString(url, headers, Constants.HTTP_TIMEOUT_MS, 0);
+    }
+
+    /** GET 文本响应，自定义超时和重试次数。 */
+    public static String getString(String url, Map<String, String> headers, int timeoutMs, int retries)
+            throws IOException, InterruptedException {
+        IOException last = null;
+        for (int attempt = 0; attempt <= retries; attempt++) {
+            try {
+                HttpRequest.Builder b = baseGet(url, timeoutMs);
+                if (headers != null) headers.forEach(b::header);
+                HttpResponse<String> resp = CLIENT.send(b.build(), HttpResponse.BodyHandlers.ofString());
+                checkResponse(url, resp.statusCode(), resp.body());
+                return resp.body();
+            } catch (IOException e) {
+                last = e;
+                if (attempt < retries) {
+                    ModLog.info("HTTP GET %s failed (attempt %d/%d): %s — retrying",
+                            url, attempt + 1, retries + 1, e.getMessage());
+                    sleepBackoff(attempt);
+                }
             }
         }
-        long size = java.nio.file.Files.size(dest);
-        ModLog.info("Downloaded %s (%d bytes) -> %s", url, size, dest);
+        throw last;
     }
 
-    /** POST a JSON body and return the response text. */
+    /** 下载文件到 dest。使用默认超时，不重试。 */
+    public static void downloadFile(String url, Path dest) throws IOException, InterruptedException {
+        downloadFile(url, dest, Constants.HTTP_TIMEOUT_MS, 0);
+    }
+
+    /** 下载文件到 dest，自定义超时和重试次数。 */
+    public static void downloadFile(String url, Path dest, int timeoutMs, int retries)
+            throws IOException, InterruptedException {
+        IOException last = null;
+        for (int attempt = 0; attempt <= retries; attempt++) {
+            try {
+                HttpRequest req = baseGet(url, timeoutMs).build();
+                HttpResponse<InputStream> resp = CLIENT.send(req, HttpResponse.BodyHandlers.ofInputStream());
+                if (resp.statusCode() / 100 != 2) {
+                    String body = new String(resp.body().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                    throw new IOException("HTTP " + resp.statusCode() + " for " + url + " — " + body);
+                }
+                try (InputStream in = resp.body();
+                     java.io.OutputStream out = java.nio.file.Files.newOutputStream(dest)) {
+                    byte[] buf = new byte[16384];
+                    int n;
+                    while ((n = in.read(buf)) != -1) {
+                        out.write(buf, 0, n);
+                    }
+                }
+                long size = java.nio.file.Files.size(dest);
+                ModLog.info("Downloaded %s (%d bytes) -> %s", url, size, dest);
+                return;
+            } catch (IOException e) {
+                last = e;
+                // 删除部分下载的文件以便下次重试干净开始。
+                try { java.nio.file.Files.deleteIfExists(dest); } catch (IOException ignored) {}
+                if (attempt < retries) {
+                    ModLog.info("Download %s failed (attempt %d/%d): %s — retrying",
+                            url, attempt + 1, retries + 1, e.getMessage());
+                    sleepBackoff(attempt);
+                }
+            }
+        }
+        throw last;
+    }
+
+    /** POST JSON 并返回响应文本。 */
     public static String postJson(String url, String jsonBody, Map<String, String> headers)
             throws IOException, InterruptedException {
-        HttpRequest.Builder b = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .timeout(Duration.ofMillis(Constants.HTTP_TIMEOUT_MS))
-                .header("User-Agent", Constants.HTTP_USER_AGENT)
-                .header("Accept", "application/json")
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody));
-        if (headers != null) headers.forEach(b::header);
-        HttpResponse<String> resp = CLIENT.send(b.build(), HttpResponse.BodyHandlers.ofString());
-        checkResponse(url, resp.statusCode(), resp.body());
-        return resp.body();
+        return postJson(url, jsonBody, headers, Constants.HTTP_TIMEOUT_MS, 0);
     }
 
-    private static HttpRequest.Builder baseGet(String url) {
+    /** POST JSON，自定义超时和重试。 */
+    public static String postJson(String url, String jsonBody, Map<String, String> headers,
+                                  int timeoutMs, int retries) throws IOException, InterruptedException {
+        IOException last = null;
+        for (int attempt = 0; attempt <= retries; attempt++) {
+            try {
+                HttpRequest.Builder b = HttpRequest.newBuilder()
+                        .uri(URI.create(url))
+                        .timeout(Duration.ofMillis(timeoutMs > 0 ? timeoutMs : Constants.HTTP_TIMEOUT_MS))
+                        .header("User-Agent", Constants.HTTP_USER_AGENT)
+                        .header("Accept", "application/json")
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(jsonBody));
+                if (headers != null) headers.forEach(b::header);
+                HttpResponse<String> resp = CLIENT.send(b.build(), HttpResponse.BodyHandlers.ofString());
+                checkResponse(url, resp.statusCode(), resp.body());
+                return resp.body();
+            } catch (IOException e) {
+                last = e;
+                if (attempt < retries) {
+                    sleepBackoff(attempt);
+                }
+            }
+        }
+        throw last;
+    }
+
+    private static HttpRequest.Builder baseGet(String url, int timeoutMs) {
         return HttpRequest.newBuilder()
                 .uri(URI.create(url))
-                .timeout(Duration.ofMillis(Constants.HTTP_TIMEOUT_MS))
+                .timeout(Duration.ofMillis(timeoutMs > 0 ? timeoutMs : Constants.HTTP_TIMEOUT_MS))
                 .header("User-Agent", Constants.HTTP_USER_AGENT)
                 .header("Accept", "application/json")
                 .GET();
@@ -96,7 +152,17 @@ public final class HttpUtil {
         }
     }
 
-    /** Returns the CurseForge API key, read from the {@code CURSEFORGE_API_KEY} env var or system property. */
+    private static void sleepBackoff(int attempt) {
+        // 指数退避：250ms, 500ms, 1s, 2s...
+        long ms = 250L * (1L << Math.min(attempt, 5));
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** 获取 CurseForge API Key：优先环境变量，其次系统属性。 */
     public static Optional<String> curseForgeApiKey() {
         String env = System.getenv(Constants.CURSEFORGE_API_KEY_ENV);
         if (env != null && !env.isBlank()) return Optional.of(env.trim());

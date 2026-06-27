@@ -1,48 +1,110 @@
-# Example mcmodupdater.properties — copy to <game>/config/mcmodupdater/mcmodupdater.properties
-# and edit as needed.
+# =============================================================
+# MC Mod Auto-Updater 配置示例
+# 复制到 <game>/config/mcmodupdater/mcmodupdater.properties 后修改
+# =============================================================
 
-# ----- Server-side config (only used on a dedicated MC server) -----
+# ---------- 服务端配置（仅 /mcmodupdater generate 时生效）----------
 
-# Subdirectory (under config/mcmodupdater/) where manifest.json + missing.json
-# are written when you run /mcmodupdater generate.
+# 清单写入的子目录（位于 config/mcmodupdater/ 下）。
+# 若 server.outputDir 已设置，则此项被忽略。
 server.outputSubdir=manifest-output
 
-# Comma-separated extra directories to scan in addition to the instance mods/ dir.
-# Example: server.extraScanDirs=/opt/mc-extra-mods,/home/me/shared-mods
+# 清单写入的绝对目录。设置后优先于 server.outputSubdir。
+# 适合直接指向 Web 服务器根目录，例如：
+#   /var/www/mc-mods/manifest/
+#   C:/nginx/html/mc/
+server.outputDir=
+
+# 除 mods/ 外额外扫描的目录，逗号分隔。
+# 可以是绝对路径或相对于游戏目录的相对路径。
+# 示例：server.extraScanDirs=/opt/mc-extra-mods,shared-mods
 server.extraScanDirs=
 
-# Whether to also include .jar.disabled files in the scan.
+# 是否递归扫描子目录（部分加载器支持嵌套模组组织）。
+server.scanRecursively=true
+
+# 是否包含 .jar.disabled 文件。
 server.scanDisabled=false
 
-# Skip the CurseForge fallback entirely (e.g. if no API key configured).
+# 目标 Minecraft 版本（写入 manifest.meta.minecraft_version 并用于过滤 Modrinth/CurseForge 版本）。
+server.minecraftVersion=1.20.1
+
+# 目标加载器（fabric / quilt / forge / neoforge）。
+server.modLoader=fabric
+
+# 是否跳过 CurseForge 查询（设为 true 时只用 Modrinth）。
 server.skipCurseForge=false
 
-# Skip the Modrinth lookup (rarely needed).
+# 是否跳过 Modrinth 查询（设为 true 时只用 CurseForge）。
 server.skipModrinth=false
 
-# ----- Client-side config (used by every player's client) -----
+# CurseForge API Key。
+# 留空则回退到环境变量 CURSEFORGE_API_KEY。
+# 申请地址：https://console.curseforge.com/
+server.curseForgeApiKey=
 
-# URL pointing to manifest.json. REQUIRED for client-side sync.
-# Examples:
+# 服务端 HTTP 请求超时（毫秒）。0 表示使用默认值（15000）。
+server.httpTimeoutMs=15000
+
+# 服务端单个模组查询失败时的最大重试次数。
+server.maxRetries=2
+
+
+# ---------- 客户端配置（每次启动同步时生效）----------
+
+# 指向 manifest.json 的 URL（HTTP/HTTPS）。客户端必填。
+# 示例：
 #   client.manifestUrl=https://your-host.example.com/mc/manifest.json
 #   client.manifestUrl=https://raw.githubusercontent.com/you/your-repo/main/manifest.json
 client.manifestUrl=
 
-# Sync automatically when the client starts up.
+# 启动时自动同步。
 client.autoSyncOnLaunch=true
 
-# Remove local .jar files in the mods folder that aren't in the manifest.
-# CAUTION: enable only if you want a strict server-defined mod set.
+# 周期性同步间隔（分钟）。0 = 禁用；>0 = 每 N 分钟检查一次 manifest 是否更新。
+# 默认禁用。建议 30-60 分钟。注意：长时间运行的游戏中，
+# manifest 变化只能通过周期同步检测到；首次变化需要重启游戏才会真正生效。
+client.periodicSyncMinutes=0
+
+# 期望的 Minecraft 版本。若 manifest 不匹配则记录警告（但仍同步）。
+# 留空则不校验。
+client.expectedMinecraftVersion=1.20.1
+
+# 期望的加载器。留空则不校验。
+client.expectedModLoader=fabric
+
+# 自定义 mods 目录路径（绝对或相对游戏目录）。为空则用默认的 mods/。
+# 示例：
+#   client.modsDir=mods              （默认行为）
+#   client.modsDir=/opt/mc-client-mods
+client.modsDir=
+
+# 删除本地清单中不存在的模组（"干净安装"模式）。
+# 谨慎开启：仅在你希望客户端严格匹配服务端模组集时使用。
 client.removeOrphans=false
 
-# Keep a .bak copy of overwritten/removed mods instead of deleting them.
+# 覆盖 / 删除前备份为 .bak。
 client.backupOldMods=true
 
-# Maximum concurrent downloads.
+# 并发下载线程数。
 client.maxConcurrentDownloads=4
 
-# Verify SHA1 after download and reject mismatches.
+# 下载后校验 SHA1，不匹配则拒绝。
 client.verifyHash=true
 
-# Tell the player to restart if anything changed.
+# 客户端 HTTP 请求超时（毫秒）。0 表示使用默认值（15000）。
+client.httpTimeoutMs=15000
+
+# 客户端单文件下载失败时的最大重试次数。
+client.maxRetries=2
+
+# 有变化时提示玩家重启。
 client.promptRestart=true
+
+# 黑名单：跳过指定 mod id（逗号分隔）。这些 mod 不会被下载/更新。
+# 示例：client.skipMods=optifine,sodium
+client.skipMods=
+
+# 白名单：仅同步这些 mod id（逗号分隔）。为空则不过滤。
+# 示例：client.onlyMods=fabric-api,sodium,jei
+client.onlyMods=

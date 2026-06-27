@@ -12,12 +12,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Fabric 客户端入口。
  *
- * <p>按照需求（"启动时触发更新检查"），客户端首次 tick 时在后台线程执行一次模组同步。
- * 同步结果通过游戏内聊天 HUD 反馈给玩家。</p>
+ * <p>启动时触发一次同步（可通过 {@code client.autoSyncOnLaunch} 关闭）。
+ * 若 {@code client.periodicSyncMinutes > 0}，则后台按周期重复同步。</p>
  */
 public class McModUpdaterFabricClient implements ClientModInitializer {
 
@@ -25,6 +26,7 @@ public class McModUpdaterFabricClient implements ClientModInitializer {
 
     private static boolean syncedOnce = false;
     private static ModUpdaterConfig config;
+    private static final AtomicLong lastPeriodicSyncTime = new AtomicLong(0);
 
     @Override
     public void onInitializeClient() {
@@ -39,27 +41,42 @@ public class McModUpdaterFabricClient implements ClientModInitializer {
             LOGGER.warn("Failed to save default config: {}", e.getMessage());
         }
 
-        if (!config.autoSyncOnLaunch) {
-            LOGGER.info("[MCModUpdater] Auto-sync on launch disabled by config.");
-            return;
-        }
         if (config.manifestUrl == null || config.manifestUrl.isBlank()) {
-            LOGGER.warn("[MCModUpdater] client.manifestUrl is not set — skipping auto-sync. Edit {} and restart.", configPath);
+            LOGGER.warn("[MCModUpdater] client.manifestUrl is not set — skipping sync. Edit {} and restart.", configPath);
             return;
         }
 
-        ClientTickEvents.START_CLIENT_TICK.register(client -> {
-            if (syncedOnce) return;
-            syncedOnce = true;
-            // Defer to a background thread so we don't stall the render loop.
-            Thread t = new Thread(() -> runSync(client, config), "mcmodupdater-sync");
-            t.setDaemon(true);
-            t.start();
-        });
+        // 启动时同步
+        if (config.autoSyncOnLaunch) {
+            ClientTickEvents.START_CLIENT_TICK.register(client -> {
+                if (syncedOnce) return;
+                syncedOnce = true;
+                Thread t = new Thread(() -> runSync(client, config), "mcmodupdater-sync");
+                t.setDaemon(true);
+                t.start();
+            });
+        } else {
+            LOGGER.info("[MCModUpdater] Auto-sync on launch disabled by config.");
+        }
+
+        // 周期同步
+        if (config.periodicSyncMinutes > 0) {
+            long intervalMs = config.periodicSyncMinutes * 60_000L;
+            LOGGER.info("[MCModUpdater] Periodic sync every {} minute(s).", config.periodicSyncMinutes);
+            ClientTickEvents.START_CLIENT_TICK.register(client -> {
+                long now = System.currentTimeMillis();
+                long last = lastPeriodicSyncTime.get();
+                if (now - last < intervalMs) return;
+                if (!lastPeriodicSyncTime.compareAndSet(last, now)) return;
+                Thread t = new Thread(() -> runSync(client, config), "mcmodupdater-periodic");
+                t.setDaemon(true);
+                t.start();
+            });
+        }
     }
 
     private void runSync(MinecraftClient client, ModUpdaterConfig cfg) {
-        Path modsDir = FabricLoader.getInstance().getGameDir().resolve("mods");
+        Path modsDir = cfg.resolveModsDir(FabricLoader.getInstance().getGameDir());
         ModSyncer syncer = new ModSyncer(modsDir, cfg);
         ModSyncer.SyncResult result = syncer.sync();
         reportToPlayer(client, result, cfg);
@@ -67,13 +84,11 @@ public class McModUpdaterFabricClient implements ClientModInitializer {
 
     private void reportToPlayer(MinecraftClient client, ModSyncer.SyncResult result, ModUpdaterConfig cfg) {
         if (client.player == null) {
-            // Player may not be in-game yet (we ran on first tick of main menu).
-            // Log instead.
             if (result.failed) {
                 LOGGER.error("[MCModUpdater] Sync failed: {}", result.errorMessage);
             } else {
-                LOGGER.info("[MCModUpdater] Sync done: {} downloaded, {} skipped, {} failed",
-                        result.downloadedCount(), result.skippedCount(), result.failedCount());
+                LOGGER.info("[MCModUpdater] Sync done: {} downloaded, {} skipped, {} failed, {} filtered",
+                        result.downloadedCount(), result.skippedCount(), result.failedCount(), result.skippedByFilter);
             }
             return;
         }
@@ -86,6 +101,9 @@ public class McModUpdaterFabricClient implements ClientModInitializer {
               .append(result.downloadedCount()).append(" downloaded, ")
               .append(result.skippedCount()).append(" up-to-date, ")
               .append(result.failedCount()).append(" failed");
+            if (result.skippedByFilter > 0) {
+                sb.append(", ").append(result.skippedByFilter).append(" filtered");
+            }
             if (!result.removedOrphans.isEmpty()) {
                 sb.append(", ").append(result.removedOrphans.size()).append(" orphan(s) removed");
             }

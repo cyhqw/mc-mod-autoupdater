@@ -144,13 +144,27 @@ mc-mod-autoupdater/
 
 ### 2.（可选）配置 CurseForge API Key
 
-CurseForge 要求免费 API Key。到 <https://console.curseforge.com/> 注册并申请一个，然后在启动服务端前设置环境变量：
+CurseForge 要求免费 API Key。到 <https://console.curseforge.com/> 注册并申请一个，然后通过以下两种方式之一提供：
+
+**方式 A：写入配置文件**（推荐，无需重启 shell）
+
+编辑 `<服务端>/config/mcmodupdater/mcmodupdater.properties`：
+
+```properties
+server.curseForgeApiKey=你的-key
+```
+
+运行 `/mcmodupdater reload-config` 让其立即生效。
+
+**方式 B：环境变量**
 
 ```bash
 export CURSEFORGE_API_KEY="你的-key"
 ```
 
-如果不设置，服务端依然可用 —— 只是不会查询 CurseForge，任何 Modrinth 上没有的模组都会进 `missing.json`。
+然后重启服务端。
+
+如果不提供 Key，服务端依然可用 —— 只是不会查询 CurseForge，任何 Modrinth 上没有的模组都会进 `missing.json`。
 
 ### 3. 生成清单
 
@@ -280,20 +294,81 @@ client.promptRestart=true
 
 ## 配置项参考
 
+完整示例见 [`examples/mcmodupdater.properties.example`](examples/mcmodupdater.properties.example)。配置文件路径：`<游戏目录>/config/mcmodupdater/mcmodupdater.properties`。
+
+### 服务端配置
+
 | 配置项                              | 默认值              | 说明                                                              |
 | ----------------------------------- | ------------------- | ----------------------------------------------------------------- |
-| `server.outputSubdir`               | `manifest-output`   | `config/mcmodupdater/` 下写入清单的子目录                         |
+| `server.outputSubdir`               | `manifest-output`   | `config/mcmodupdater/` 下写入清单的子目录（被 `outputDir` 覆盖）  |
+| `server.outputDir`                  | (空)                | 清单写入的绝对目录；设置后优先于 `outputSubdir`，可直接指向 Web 根目录 |
 | `server.extraScanDirs`              | (空)                | 除 `mods/` 外额外扫描的目录，逗号分隔                              |
+| `server.scanRecursively`            | `true`              | 是否递归扫描子目录                                                |
 | `server.scanDisabled`               | `false`             | 是否包含 `.jar.disabled` 文件                                     |
+| `server.minecraftVersion`           | `1.20.1`            | 目标 MC 版本（写入 manifest.meta，并用于过滤 Modrinth/CurseForge 版本） |
+| `server.modLoader`                  | `fabric`            | 目标加载器（`fabric` / `quilt` / `forge` / `neoforge`）           |
 | `server.skipCurseForge`             | `false`             | 完全跳过 CurseForge 查询                                          |
-| `server.skipModrinth`               | `false`             | 完全跳过 Modrinth 查询（很少用）                                  |
-| `client.manifestUrl`                | (空)                | **客户端必填。** 指向 manifest.json 的 URL                        |
+| `server.skipModrinth`               | `false`             | 完全跳过 Modrinth 查询                                            |
+| `server.curseForgeApiKey`           | (空)                | CurseForge API Key；留空则回退到环境变量 `CURSEFORGE_API_KEY`     |
+| `server.httpTimeoutMs`              | `15000`             | 服务端 HTTP 请求超时（毫秒）                                      |
+| `server.maxRetries`                 | `2`                 | 服务端单模组查询失败时的最大重试次数                              |
+
+### 客户端配置
+
+| 配置项                              | 默认值              | 说明                                                              |
+| ----------------------------------- | ------------------- | ----------------------------------------------------------------- |
+| `client.manifestUrl`                | (空)                | **必填。** 指向 manifest.json 的 URL                              |
 | `client.autoSyncOnLaunch`           | `true`              | 客户端启动时自动同步                                              |
+| `client.periodicSyncMinutes`        | `0`                 | 周期同步间隔（分钟）；`0` 禁用，`>0` 每 N 分钟检查 manifest 是否更新 |
+| `client.expectedMinecraftVersion`   | (空)                | 期望的 MC 版本；不匹配时记录警告（仍同步）                        |
+| `client.expectedModLoader`          | (空)                | 期望的加载器；不匹配时记录警告                                    |
+| `client.modsDir`                    | (空)                | 自定义 mods 目录路径；为空用默认的 `mods/`                        |
 | `client.removeOrphans`              | `false`             | 删除本地清单中不存在的模组                                        |
 | `client.backupOldMods`              | `true`              | 覆盖 / 删除时先备份为 `.bak`                                      |
 | `client.maxConcurrentDownloads`     | `4`                 | 并发下载线程数                                                    |
 | `client.verifyHash`                 | `true`              | 下载后校验 SHA1，不匹配则拒绝                                     |
+| `client.httpTimeoutMs`              | `15000`             | 客户端 HTTP 请求超时（毫秒）                                      |
+| `client.maxRetries`                 | `2`                 | 客户端单文件下载失败时的最大重试次数                              |
 | `client.promptRestart`              | `true`              | 有变化时提示玩家重启                                              |
+| `client.skipMods`                   | (空)                | 黑名单：跳过指定 mod id（逗号分隔）                               |
+| `client.onlyMods`                   | (空)                | 白名单：仅同步这些 mod id（逗号分隔）；为空则不过滤               |
+
+### 服务器命令
+
+| 命令                                | 权限     | 说明                                          |
+| ----------------------------------- | -------- | --------------------------------------------- |
+| `/mcmodupdater generate`            | OP 2 级  | 扫描 mods 目录，重新生成 manifest.json 和 missing.json |
+| `/mcmodupdater reload-config`       | OP 2 级  | 重新加载配置文件（无需重启服务器）            |
+| `/mcmodupdater show-config`         | OP 2 级  | 显示当前生效的关键配置                        |
+
+### 常见配置场景
+
+**场景 1：服务端把清单直接写到 Nginx 静态目录**
+
+```properties
+server.outputDir=/var/www/mc-mods/manifest/
+```
+
+**场景 2：客户端只同步白名单内的几个核心 mod**
+
+```properties
+client.manifestUrl=https://example.com/mc/manifest.json
+client.onlyMods=fabric-api,sodium,lithium,phosphor
+```
+
+**场景 3：客户端每 30 分钟检查一次 manifest 更新**
+
+```properties
+client.manifestUrl=https://example.com/mc/manifest.json
+client.autoSyncOnLaunch=true
+client.periodicSyncMinutes=30
+```
+
+**场景 4：服务端不使用环境变量，直接在配置文件中写 CurseForge key**
+
+```properties
+server.curseForgeApiKey=$2a$10$YourCurseForgeApiKeyHere
+```
 
 ---
 

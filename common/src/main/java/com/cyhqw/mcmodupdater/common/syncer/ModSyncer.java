@@ -26,26 +26,21 @@ import java.util.concurrent.Semaphore;
 import java.util.stream.Stream;
 
 /**
- * Client-side logic: fetch a manifest from a URL, sync the local mods folder
- * to match it.
+ * 客户端逻辑：从 URL 拉取 manifest，同步本地 mods 目录。
  *
- * <p>This is the "客户端行为" (client behavior) part of the spec. Triggered at
- * game launch by the platform mods.</p>
- *
- * <p>Sync algorithm:</p>
+ * <p>同步算法：</p>
  * <ol>
- *   <li>Download {@code manifest.json} from the configured URL</li>
- *   <li>For each mod entry:
+ *   <li>从 {@link ModUpdaterConfig#manifestUrl} 下载 manifest.json（支持超时/重试）</li>
+ *   <li>校验 manifest.meta 的 mcVersion/loader 是否符合期望（仅警告，不中断）</li>
+ *   <li>对每个 mod 条目（应用 skipMods/onlyMods 过滤）：
  *     <ul>
- *       <li>If the expected file (by filename) is already in the mods folder AND
- *           its SHA1 matches → skip</li>
- *       <li>Otherwise download to {@code .part}, verify SHA1, atomically rename</li>
- *       <li>If overwrite needed, optionally backup the old file to {@code .bak}</li>
+ *       <li>本地已存在且 SHA1 匹配 → 跳过</li>
+ *       <li>否则下载到 .part，校验 SHA1，原子重命名（支持重试）</li>
+ *       <li>覆盖前可选备份为 .bak</li>
  *     </ul>
  *   </li>
- *   <li>If {@code removeOrphans=true}, delete any .jar in the mods folder whose
- *       filename isn't in the manifest (with backup if enabled)</li>
- *   <li>Return a {@link SyncResult} so the platform can prompt for restart</li>
+ *   <li>若 {@code removeOrphans=true}，删除清单中不存在的本地 jar（可选备份）</li>
+ *   <li>返回 {@link SyncResult}，供平台层提示玩家重启</li>
  * </ol>
  */
 public final class ModSyncer {
@@ -71,7 +66,9 @@ public final class ModSyncer {
 
         Manifest manifest;
         try {
-            String body = HttpUtil.getString(config.manifestUrl);
+            String body = HttpUtil.getString(
+                    config.manifestUrl, null,
+                    config.effectiveHttpTimeoutMs(), 0);
             manifest = new Gson().fromJson(JsonParser.parseString(body).getAsJsonObject(), Manifest.class);
         } catch (Exception e) {
             return SyncResult.failure("Failed to fetch manifest from " + config.manifestUrl + ": " + e.getMessage());
@@ -87,8 +84,19 @@ public final class ModSyncer {
         if (validationError != null) {
             return SyncResult.failure(validationError);
         }
+
+        // 校验 manifest 的 mc/loader 与客户端期望是否一致（仅警告）
+        String mcWarn = checkExpectedVersions(manifest);
+        if (mcWarn != null) {
+            ModLog.warn("[MCModUpdater] %s", mcWarn);
+        }
+
         ModLog.info("Manifest fetched: %d mods, generated %s",
                 manifest.mods.size(), manifest.meta.generatedAt);
+
+        // 解析黑白名单
+        Set<String> skip = config.skipModsSet();
+        Set<String> only = config.onlyModsSet();
 
         // Build a map of existing files by filename.
         Map<String, Path> existing = new HashMap<>();
@@ -109,7 +117,21 @@ public final class ModSyncer {
         Semaphore concurrency = new Semaphore(Math.max(1, config.maxConcurrentDownloads));
         ExecutorService pool = Executors.newFixedThreadPool(Math.max(1, config.maxConcurrentDownloads));
 
+        int skippedByFilter = 0;
         for (ModEntry entry : manifest.mods) {
+            // 黑白名单过滤
+            String id = entry.id != null ? entry.id.toLowerCase() : "";
+            if (!skip.isEmpty() && skip.contains(id)) {
+                ModLog.info("[filter:skip] %s (id=%s)", entry.filename, entry.id);
+                skippedByFilter++;
+                continue;
+            }
+            if (!only.isEmpty() && !only.contains(id)) {
+                ModLog.info("[filter:only] %s (id=%s not in whitelist)", entry.filename, entry.id);
+                skippedByFilter++;
+                continue;
+            }
+
             expectedFilenames.add(entry.filename);
             futures.add(CompletableFuture.supplyAsync(() -> {
                 try {
@@ -157,10 +179,10 @@ public final class ModSyncer {
             }
         }
 
-        // Restart prompt needed if anything changed.
         boolean changed = actions.stream().anyMatch(a -> a.status != ActionStatus.SKIPPED) || !removed.isEmpty();
         boolean failed = actions.stream().anyMatch(a -> a.status == ActionStatus.FAILED);
-        return new SyncResult(manifest, actions, removed, changed, failed, null);
+        SyncResult result = new SyncResult(manifest, actions, removed, changed, failed, null, skippedByFilter);
+        return result;
     }
 
     private SyncAction syncOne(ModEntry entry, Map<String, Path> existing) {
@@ -191,24 +213,36 @@ public final class ModSyncer {
             }
         }
 
-        // Download
-        try {
-            Files.deleteIfExists(part);
-            HttpUtil.downloadFile(entry.downloadUrl, part);
-            if (config.verifyHash && entry.sha1 != null) {
-                String got = HashUtils.sha1(part);
-                if (!got.equalsIgnoreCase(entry.sha1)) {
-                    Files.deleteIfExists(part);
-                    return new SyncAction(entry, ActionStatus.FAILED,
-                            "sha1 mismatch after download: got=" + got + " expected=" + entry.sha1);
+        // Download with retry
+        int retries = config.effectiveMaxRetries();
+        Exception lastErr = null;
+        for (int attempt = 0; attempt <= retries; attempt++) {
+            try {
+                Files.deleteIfExists(part);
+                HttpUtil.downloadFile(entry.downloadUrl, part,
+                        config.effectiveHttpTimeoutMs(), 0);
+                if (config.verifyHash && entry.sha1 != null) {
+                    String got = HashUtils.sha1(part);
+                    if (!got.equalsIgnoreCase(entry.sha1)) {
+                        Files.deleteIfExists(part);
+                        throw new IOException("sha1 mismatch after download: got=" + got + " expected=" + entry.sha1);
+                    }
+                }
+                Files.move(part, target, StandardCopyOption.REPLACE_EXISTING);
+                return new SyncAction(entry, ActionStatus.DOWNLOADED, "ok");
+            } catch (Exception e) {
+                lastErr = e;
+                try { Files.deleteIfExists(part); } catch (IOException ignored) {}
+                if (attempt < retries) {
+                    ModLog.info("[retry] %s (attempt %d/%d): %s",
+                            entry.filename, attempt + 1, retries + 1, e.getMessage());
+                    try { Thread.sleep(250L * (1L << Math.min(attempt, 5))); }
+                    catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
                 }
             }
-            Files.move(part, target, StandardCopyOption.REPLACE_EXISTING);
-            return new SyncAction(entry, ActionStatus.DOWNLOADED, "ok");
-        } catch (Exception e) {
-            try { Files.deleteIfExists(part); } catch (IOException ignored) {}
-            return new SyncAction(entry, ActionStatus.FAILED, e.getMessage());
         }
+        return new SyncAction(entry, ActionStatus.FAILED,
+                lastErr != null ? lastErr.getMessage() : "download failed");
     }
 
     private String validateManifest(Manifest manifest) {
@@ -242,6 +276,29 @@ public final class ModSyncer {
         return null;
     }
 
+    /** 校验 manifest 的 mc/loader 是否与客户端期望一致。不一致返回警告字符串，一致返回 null。 */
+    private String checkExpectedVersions(Manifest manifest) {
+        String expMc = config.expectedMinecraftVersion;
+        String expLoader = config.expectedModLoader;
+        if ((expMc == null || expMc.isBlank()) && (expLoader == null || expLoader.isBlank())) {
+            return null;
+        }
+        List<String> warnings = new ArrayList<>();
+        if (expMc != null && !expMc.isBlank()
+                && manifest.meta.minecraftVersion != null
+                && !expMc.equals(manifest.meta.minecraftVersion)) {
+            warnings.add("minecraft_version mismatch: expected=" + expMc
+                    + " manifest=" + manifest.meta.minecraftVersion);
+        }
+        if (expLoader != null && !expLoader.isBlank()
+                && manifest.meta.modLoader != null
+                && !expLoader.equalsIgnoreCase(manifest.meta.modLoader)) {
+            warnings.add("mod_loader mismatch: expected=" + expLoader
+                    + " manifest=" + manifest.meta.modLoader);
+        }
+        return warnings.isEmpty() ? null : String.join("; ", warnings);
+    }
+
     // ------------------------------------------------------------------
 
     public enum ActionStatus { SKIPPED, DOWNLOADED, FAILED }
@@ -265,19 +322,21 @@ public final class ModSyncer {
         public final boolean changed;
         public final boolean failed;
         public final String errorMessage;
+        public final int skippedByFilter;
 
         private SyncResult(Manifest manifest, List<SyncAction> actions, List<String> removed,
-                           boolean changed, boolean failed, String errorMessage) {
+                           boolean changed, boolean failed, String errorMessage, int skippedByFilter) {
             this.manifest = manifest;
             this.actions = actions;
             this.removedOrphans = removed;
             this.changed = changed;
             this.failed = failed;
             this.errorMessage = errorMessage;
+            this.skippedByFilter = skippedByFilter;
         }
 
         public static SyncResult failure(String message) {
-            return new SyncResult(null, new ArrayList<>(), new ArrayList<>(), false, true, message);
+            return new SyncResult(null, new ArrayList<>(), new ArrayList<>(), false, true, message, 0);
         }
 
         public int downloadedCount() {

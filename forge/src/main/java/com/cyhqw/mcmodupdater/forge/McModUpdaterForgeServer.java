@@ -20,10 +20,12 @@ import java.util.concurrent.atomic.AtomicReference;
 import static net.minecraft.commands.Commands.literal;
 
 /**
- * Forge dedicated-server command registration.
+ * Forge 服务端命令注册。
  *
- * <p>Registers {@code /mcmodupdater generate} and {@code /mcmodupdater reload-config}
- * on the server.</p>
+ * <p>注册 {@code /mcmodupdater generate}、{@code /mcmodupdater reload-config}、
+ * {@code /mcmodupdater show-config} 命令。</p>
+ *
+ * <p>所有可配置项见 {@link ModUpdaterConfig}。</p>
  */
 @Mod.EventBusSubscriber(modid = McModUpdaterForge.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class McModUpdaterForgeServer {
@@ -51,7 +53,23 @@ public final class McModUpdaterForgeServer {
                         .executes(ctx -> {
                             ModUpdaterConfig fresh = ModUpdaterConfig.load(configPath);
                             cfgRef.set(fresh);
-                            ctx.getSource().sendSuccess(() -> Component.literal("[MCModUpdater] Config reloaded."), false);
+                            ctx.getSource().sendSuccess(() -> Component.literal(
+                                    "[MCModUpdater] Config reloaded. mc=" + fresh.minecraftVersion
+                                            + " loader=" + fresh.modLoader), false);
+                            return 1;
+                        }))
+                .then(literal("show-config")
+                        .executes(ctx -> {
+                            ModUpdaterConfig cfg = cfgRef.get();
+                            Path gameDir = FMLPaths.GAMEDIR.get();
+                            ctx.getSource().sendSuccess(() -> Component.literal(
+                                    "[MCModUpdater] manifestUrl=" + cfg.manifestUrl
+                                            + " | mc=" + cfg.minecraftVersion
+                                            + " | loader=" + cfg.modLoader
+                                            + " | outputDir=" + cfg.resolveOutputDir(gameDir)
+                                            + " | skipMods=" + cfg.skipModrinth
+                                            + " | skipCF=" + cfg.skipCurseForge
+                                            + " | cfKey=" + (cfg.curseForgeApiKey != null && !cfg.curseForgeApiKey.isBlank() ? "(set)" : "(unset)")), false);
                             return 1;
                         }))
         );
@@ -59,20 +77,26 @@ public final class McModUpdaterForgeServer {
 
     private static int runGenerate(CommandContext<CommandSourceStack> ctx, ModUpdaterConfig cfg) {
         Path gameDir = FMLPaths.GAMEDIR.get();
-        Path outputDir = gameDir.resolve("config").resolve("mcmodupdater").resolve(cfg.outputSubdir);
+        Path outputDir = cfg.resolveOutputDir(gameDir);
 
         CommandSourceStack src = ctx.getSource();
         MinecraftServer server = src.getServer();
-        src.sendSuccess(() -> Component.literal("[MCModUpdater] Scanning " + cfg.scanDirs(gameDir) + " ..."), false);
+        src.sendSuccess(() -> Component.literal(
+                "[MCModUpdater] Scanning " + cfg.scanDirs(gameDir) + " (mc=" + cfg.minecraftVersion
+                        + ", loader=" + cfg.modLoader + ") ..."), false);
 
         Thread t = new Thread(() -> {
-            String loader = "forge";
-            // Forge 1.20.1 doesn't expose server.getMinecraftVersion(); use the
-            // constant from gradle.properties via the mod's own metadata.
-            String mcVersion = "1.20.1";
-            ManifestBuilder builder = new ManifestBuilder(mcVersion, loader, cfg.skipModrinth, cfg.skipCurseForge);
+            String loader = (cfg.modLoader != null && !cfg.modLoader.isBlank()) ? cfg.modLoader : "forge";
+            String mcVersion = (cfg.minecraftVersion != null && !cfg.minecraftVersion.isBlank())
+                    ? cfg.minecraftVersion : "1.20.1";
+            ManifestBuilder builder = new ManifestBuilder(
+                    mcVersion, loader,
+                    cfg.skipModrinth, cfg.skipCurseForge,
+                    cfg.curseForgeApiKey,
+                    cfg.serverHttpTimeoutMs, cfg.serverMaxRetries);
             try {
-                ManifestBuilder.BuildResult r = builder.build(cfg.scanDirs(gameDir), outputDir, cfg.scanDisabled);
+                ManifestBuilder.BuildResult r = builder.build(
+                        cfg.scanDirs(gameDir), outputDir, cfg.scanDisabled, cfg.scanRecursively);
                 server.execute(() -> {
                     src.sendSuccess(() -> Component.literal(
                             "[MCModUpdater] Manifest written: " + r.manifest.mods.size() + " mods, "

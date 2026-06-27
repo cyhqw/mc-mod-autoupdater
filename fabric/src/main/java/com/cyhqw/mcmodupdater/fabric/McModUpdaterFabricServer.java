@@ -19,14 +19,13 @@ import java.util.concurrent.atomic.AtomicReference;
 import static net.minecraft.server.command.CommandManager.literal;
 
 /**
- * Fabric dedicated-server entry point.
+ * Fabric 专用服入口。
  *
- * <p>The server-side mod does NOT auto-run on startup — it's an on-demand
- * command. Run {@code /mcmodupdater generate} from the server console or
- * op chat to scan mods and regenerate the manifest files.</p>
+ * <p>服务端不自动运行 —— 通过 {@code /mcmodupdater generate} 手动触发。
+ * 输出目录由 {@code server.outputDir}（绝对路径）或 {@code server.outputSubdir}
+ * （位于 config/mcmodupdater/ 下）控制。</p>
  *
- * <p>The output files (manifest.json + missing.json) appear in
- * {@code <server>/config/mcmodupdater/manifest-output/} by default.</p>
+ * <p>所有可配置项见 {@link ModUpdaterConfig}。</p>
  */
 public class McModUpdaterFabricServer implements DedicatedServerModInitializer {
 
@@ -55,7 +54,22 @@ public class McModUpdaterFabricServer implements DedicatedServerModInitializer {
                             .executes(ctx -> {
                                 ModUpdaterConfig fresh = ModUpdaterConfig.load(configPath);
                                 cfgRef.set(fresh);
-                                ctx.getSource().sendFeedback(() -> Text.literal("[MCModUpdater] Config reloaded."), false);
+                                ctx.getSource().sendFeedback(() -> Text.literal(
+                                        "[MCModUpdater] Config reloaded. mc=" + fresh.minecraftVersion
+                                                + " loader=" + fresh.modLoader), false);
+                                return 1;
+                            }))
+                    .then(literal("show-config")
+                            .executes(ctx -> {
+                                ModUpdaterConfig cfg = cfgRef.get();
+                                ctx.getSource().sendFeedback(() -> Text.literal(
+                                        "[MCModUpdater] manifestUrl=" + cfg.manifestUrl
+                                                + " | mc=" + cfg.minecraftVersion
+                                                + " | loader=" + cfg.modLoader
+                                                + " | outputDir=" + cfg.resolveOutputDir(gameDir)
+                                                + " | skipMods=" + cfg.skipModrinth
+                                                + " | skipCF=" + cfg.skipCurseForge
+                                                + " | cfKey=" + (cfg.curseForgeApiKey != null && !cfg.curseForgeApiKey.isBlank() ? "(set)" : "(unset)")), false);
                                 return 1;
                             }))
             );
@@ -67,19 +81,25 @@ public class McModUpdaterFabricServer implements DedicatedServerModInitializer {
 
     private int runGenerate(CommandContext<ServerCommandSource> ctx, ModUpdaterConfig cfg) {
         Path gameDir = FabricLoader.getInstance().getGameDir();
-        Path outputDir = gameDir.resolve("config").resolve("mcmodupdater").resolve(cfg.outputSubdir);
+        Path outputDir = cfg.resolveOutputDir(gameDir);
 
-        ctx.getSource().sendFeedback(() -> Text.literal("[MCModUpdater] Scanning " + cfg.scanDirs(gameDir) + " ..."), false);
+        ctx.getSource().sendFeedback(() -> Text.literal(
+                "[MCModUpdater] Scanning " + cfg.scanDirs(gameDir) + " (mc=" + cfg.minecraftVersion
+                        + ", loader=" + cfg.modLoader + ") ..."), false);
 
-        // Run on a background thread so we don't freeze the main server thread.
         Thread t = new Thread(() -> {
-            // Detect mod loader: prefer Fabric (we're running on Fabric here), but
-            // include the configured loader hint in the manifest meta.
-            String loader = "fabric";
-            String mcVersion = "1.20.1";
-            ManifestBuilder builder = new ManifestBuilder(mcVersion, loader, cfg.skipModrinth, cfg.skipCurseForge);
+            // 我们在 Fabric 上运行，所以 loader 至少是 fabric；但允许配置覆盖（如 quilt）
+            String loader = (cfg.modLoader != null && !cfg.modLoader.isBlank()) ? cfg.modLoader : "fabric";
+            String mcVersion = (cfg.minecraftVersion != null && !cfg.minecraftVersion.isBlank())
+                    ? cfg.minecraftVersion : "1.20.1";
+            ManifestBuilder builder = new ManifestBuilder(
+                    mcVersion, loader,
+                    cfg.skipModrinth, cfg.skipCurseForge,
+                    cfg.curseForgeApiKey,
+                    cfg.serverHttpTimeoutMs, cfg.serverMaxRetries);
             try {
-                ManifestBuilder.BuildResult r = builder.build(cfg.scanDirs(gameDir), outputDir, cfg.scanDisabled);
+                ManifestBuilder.BuildResult r = builder.build(
+                        cfg.scanDirs(gameDir), outputDir, cfg.scanDisabled, cfg.scanRecursively);
                 ctx.getSource().getServer().execute(() -> {
                     ctx.getSource().sendFeedback(() -> Text.literal(
                             "[MCModUpdater] Manifest written: " + r.manifest.mods.size() + " mods, "
