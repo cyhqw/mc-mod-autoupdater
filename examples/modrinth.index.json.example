@@ -1,0 +1,42 @@
+{
+  "formatVersion": 1,
+  "game": "minecraft",
+  "versionId": "1.0",
+  "name": "Example Modpack",
+  "files": [
+    {
+      "path": "mods/fabric-api.jar",
+      "hashes": {
+        "sha1": "abcdef0123456789abcdef0123456789abcdef01",
+        "sha512": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/P7dR8mSH/versions/YblPfZTU/fabric-api-0.92.2%2B1.20.1.jar"
+      ],
+      "fileSize": 2031582,
+      "env": {
+        "client": "required",
+        "server": "optional"
+      }
+    },
+    {
+      "path": "mods/sodium.jar",
+      "hashes": {
+        "sha1": "fedcba9876543210fedcba9876543210fedcba98",
+        "sha512": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/AANobbMI/versions/mOgZ4Fmo/sodium-mc1.20.1-0.5.3.jar"
+      ],
+      "fileSize": 742785,
+      "env": {
+        "client": "required",
+        "server": "unsupported"
+      }
+    }
+  ],
+  "dependencies": {
+    "minecraft": "1.20.1",
+    "fabric-loader": "0.15.11"
+  }
+}

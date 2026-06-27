@@ -2,15 +2,16 @@ modLoader="javafml"
 loaderVersion="[47,)"
 license="MIT"
 issueTrackerURL="https://github.com/cyhqw/mc-mod-autoupdater/issues"
+displayTest="IGNORE_ALL_VERSION"
 
 [[mods]]
 modId="mcmodupdater"
-version="${version}"
+version="0.2.0"
 displayName="MC Mod Auto-Updater"
 authors="cyhqw"
 description='''
-Server scans mods and queries Modrinth/CurseForge to build a JSON manifest;
-client pulls manifest from a URL and syncs mods at game launch.
+Client-only mod: fetches a Modrinth modpack index (modrinth.index.json) from a
+URL and syncs the local mods folder at game launch. Supports periodic re-sync.
 '''
 
 [[dependencies.mcmodupdater]]
@@ -18,11 +19,11 @@ modId="forge"
 mandatory=true
 versionRange="[47,)"
 ordering="NONE"
-side="BOTH"
+side="CLIENT"
 
 [[dependencies.mcmodupdater]]
 modId="minecraft"
 mandatory=true
 versionRange="[1.20.1,1.21)"
 ordering="NONE"
-side="BOTH"
+side="CLIENT"

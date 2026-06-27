@@ -11,13 +11,13 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Map;
-import java.util.Optional;
 
 /**
  * HTTP 工具。基于 JDK 内置的 {@link HttpClient}（MC 1.20.1 自带 Java 17）。
  *
- * <p>所有请求都带超时和可选重试。重试仅对网络层异常生效，对 HTTP 4xx/5xx 不重试。</p>
+ * <p>仅用于客户端：拉取 modrinth.index.json、下载 mod jar 文件。</p>
+ *
+ * <p>所有请求都支持超时和指数退避重试。重试仅对网络层异常生效，对 HTTP 4xx/5xx 不重试。</p>
  */
 public final class HttpUtil {
 
@@ -30,23 +30,17 @@ public final class HttpUtil {
 
     /** GET 文本响应。使用默认超时，不重试。 */
     public static String getString(String url) throws IOException, InterruptedException {
-        return getString(url, null, Constants.HTTP_TIMEOUT_MS, 0);
-    }
-
-    /** GET 文本响应，自定义请求头。使用默认超时，不重试。 */
-    public static String getString(String url, Map<String, String> headers) throws IOException, InterruptedException {
-        return getString(url, headers, Constants.HTTP_TIMEOUT_MS, 0);
+        return getString(url, Constants.HTTP_TIMEOUT_MS, 0);
     }
 
     /** GET 文本响应，自定义超时和重试次数。 */
-    public static String getString(String url, Map<String, String> headers, int timeoutMs, int retries)
+    public static String getString(String url, int timeoutMs, int retries)
             throws IOException, InterruptedException {
         IOException last = null;
         for (int attempt = 0; attempt <= retries; attempt++) {
             try {
-                HttpRequest.Builder b = baseGet(url, timeoutMs);
-                if (headers != null) headers.forEach(b::header);
-                HttpResponse<String> resp = CLIENT.send(b.build(), HttpResponse.BodyHandlers.ofString());
+                HttpRequest req = baseGet(url, timeoutMs).build();
+                HttpResponse<String> resp = CLIENT.send(req, HttpResponse.BodyHandlers.ofString());
                 checkResponse(url, resp.statusCode(), resp.body());
                 return resp.body();
             } catch (IOException e) {
@@ -91,44 +85,10 @@ public final class HttpUtil {
                 return;
             } catch (IOException e) {
                 last = e;
-                // 删除部分下载的文件以便下次重试干净开始。
                 try { java.nio.file.Files.deleteIfExists(dest); } catch (IOException ignored) {}
                 if (attempt < retries) {
                     ModLog.info("Download %s failed (attempt %d/%d): %s — retrying",
                             url, attempt + 1, retries + 1, e.getMessage());
-                    sleepBackoff(attempt);
-                }
-            }
-        }
-        throw last;
-    }
-
-    /** POST JSON 并返回响应文本。 */
-    public static String postJson(String url, String jsonBody, Map<String, String> headers)
-            throws IOException, InterruptedException {
-        return postJson(url, jsonBody, headers, Constants.HTTP_TIMEOUT_MS, 0);
-    }
-
-    /** POST JSON，自定义超时和重试。 */
-    public static String postJson(String url, String jsonBody, Map<String, String> headers,
-                                  int timeoutMs, int retries) throws IOException, InterruptedException {
-        IOException last = null;
-        for (int attempt = 0; attempt <= retries; attempt++) {
-            try {
-                HttpRequest.Builder b = HttpRequest.newBuilder()
-                        .uri(URI.create(url))
-                        .timeout(Duration.ofMillis(timeoutMs > 0 ? timeoutMs : Constants.HTTP_TIMEOUT_MS))
-                        .header("User-Agent", Constants.HTTP_USER_AGENT)
-                        .header("Accept", "application/json")
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(jsonBody));
-                if (headers != null) headers.forEach(b::header);
-                HttpResponse<String> resp = CLIENT.send(b.build(), HttpResponse.BodyHandlers.ofString());
-                checkResponse(url, resp.statusCode(), resp.body());
-                return resp.body();
-            } catch (IOException e) {
-                last = e;
-                if (attempt < retries) {
                     sleepBackoff(attempt);
                 }
             }
@@ -153,21 +113,11 @@ public final class HttpUtil {
     }
 
     private static void sleepBackoff(int attempt) {
-        // 指数退避：250ms, 500ms, 1s, 2s...
         long ms = 250L * (1L << Math.min(attempt, 5));
         try {
             Thread.sleep(ms);
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
         }
-    }
-
-    /** 获取 CurseForge API Key：优先环境变量，其次系统属性。 */
-    public static Optional<String> curseForgeApiKey() {
-        String env = System.getenv(Constants.CURSEFORGE_API_KEY_ENV);
-        if (env != null && !env.isBlank()) return Optional.of(env.trim());
-        String prop = System.getProperty(Constants.CURSEFORGE_API_KEY_ENV);
-        if (prop != null && !prop.isBlank()) return Optional.of(prop.trim());
-        return Optional.empty();
     }
 }

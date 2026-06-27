@@ -17,8 +17,10 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Fabric 客户端入口。
  *
- * <p>启动时触发一次同步（可通过 {@code client.autoSyncOnLaunch} 关闭）。
- * 若 {@code client.periodicSyncMinutes > 0}，则后台按周期重复同步。</p>
+ * <p>纯客户端模组：启动时从配置的 URL 拉取 Modrinth 整合包格式的 modrinth.index.json，
+ * 同步本地 mods 目录。若 {@code periodicSyncMinutes > 0}，则按周期重复同步。</p>
+ *
+ * <p>不注册任何服务端入口，不在专用服上运行。</p>
  */
 public class McModUpdaterFabricClient implements ClientModInitializer {
 
@@ -42,7 +44,7 @@ public class McModUpdaterFabricClient implements ClientModInitializer {
         }
 
         if (config.manifestUrl == null || config.manifestUrl.isBlank()) {
-            LOGGER.warn("[MCModUpdater] client.manifestUrl is not set — skipping sync. Edit {} and restart.", configPath);
+            LOGGER.warn("[MCModUpdater] manifestUrl is not set — skipping sync. Edit {} and restart.", configPath);
             return;
         }
 
@@ -87,8 +89,9 @@ public class McModUpdaterFabricClient implements ClientModInitializer {
             if (result.failed) {
                 LOGGER.error("[MCModUpdater] Sync failed: {}", result.errorMessage);
             } else {
-                LOGGER.info("[MCModUpdater] Sync done: {} downloaded, {} skipped, {} failed, {} filtered",
-                        result.downloadedCount(), result.skippedCount(), result.failedCount(), result.skippedByFilter);
+                LOGGER.info("[MCModUpdater] Sync done: {} downloaded, {} skipped, {} failed, {} filtered, {} env-skipped",
+                        result.downloadedCount(), result.skippedCount(), result.failedCount(),
+                        result.skippedByFilter, result.skippedByEnv);
             }
             return;
         }

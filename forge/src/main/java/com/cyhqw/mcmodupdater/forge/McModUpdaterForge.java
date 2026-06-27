@@ -6,24 +6,24 @@ import org.apache.logging.log4j.Logger;
 import net.minecraftforge.fml.common.Mod;
 
 /**
- * Forge 模组入口。@Mod 注解驱动注册，构造函数无需业务逻辑 —— 所有事件处理器
- * 都通过 {@link Mod.EventBusSubscriber} 注解自动挂载。
+ * Forge 模组入口。
  *
- * <p>服务端：{@link McModUpdaterForgeServer} 注册命令。</p>
- * <p>客户端：{@link McModUpdaterForgeClient} 在启动时触发同步。</p>
+ * <p>纯客户端模组：所有业务逻辑由 {@link McModUpdaterForgeClient} 在客户端Dist 上
+ * 通过 {@link Mod.EventBusSubscriber} 注册，本类只负责把日志桥接到 Log4j。</p>
+ *
+ * <p>不注册任何服务端逻辑，不在专用服上运行。</p>
  */
 @Mod(McModUpdaterForge.MOD_ID)
 public final class McModUpdaterForge {
 
     public static final String MOD_ID = "mcmodupdater";
     public static final String MOD_NAME = "MC Mod Auto-Updater";
-    public static final String VERSION = "0.1.0";
+    public static final String VERSION = "0.2.0";
 
     private static final Logger LOGGER = LogManager.getLogger("MCModUpdater");
 
     public McModUpdaterForge() {
         ModLog.setSink(new Log4jSink(LOGGER));
-        LOGGER.info("[MCModUpdater] Forge mod loading. mc={}, forge={}", "1.20.1", "47.x");
-        // No-op — registration happens via @Mod.EventBusSubscriber annotations.
+        LOGGER.info("[MCModUpdater] Forge client mod loading. (client-only)");
     }
 }
