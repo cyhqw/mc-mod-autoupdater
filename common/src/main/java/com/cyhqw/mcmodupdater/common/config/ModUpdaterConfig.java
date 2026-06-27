@@ -3,6 +3,8 @@ package com.cyhqw.mcmodupdater.common.config;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 
 /**
@@ -103,6 +105,23 @@ public final class ModUpdaterConfig {
         try (var out = Files.newOutputStream(configPath)) {
             props.store(out, "MC Mod Auto-Updater configuration");
         }
+    }
+
+    public List<Path> scanDirs(Path gameDir) {
+        List<Path> dirs = new ArrayList<>();
+        dirs.add(gameDir.resolve("mods"));
+        if (extraScanDirs == null || extraScanDirs.isBlank()) {
+            return dirs;
+        }
+        for (String raw : extraScanDirs.split(",")) {
+            String value = raw.trim();
+            if (value.isEmpty()) {
+                continue;
+            }
+            Path path = Path.of(value);
+            dirs.add(path.isAbsolute() ? path : gameDir.resolve(path).normalize());
+        }
+        return dirs;
     }
 
     private static int parseInt(Properties p, String key, int def) {

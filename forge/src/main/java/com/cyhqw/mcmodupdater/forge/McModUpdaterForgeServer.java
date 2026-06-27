@@ -15,6 +15,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.loading.FMLPaths;
 
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static net.minecraft.commands.Commands.literal;
 
@@ -40,15 +41,16 @@ public final class McModUpdaterForgeServer {
         } catch (Exception e) {
             LOGGER.warn("Failed to save default config: {}", e.getMessage());
         }
-        final ModUpdaterConfig cfg = config;
+        final AtomicReference<ModUpdaterConfig> cfgRef = new AtomicReference<>(config);
 
         event.getDispatcher().register(literal("mcmodupdater")
                 .requires(src -> src.hasPermission(2))
                 .then(literal("generate")
-                        .executes(ctx -> runGenerate(ctx, cfg)))
+                        .executes(ctx -> runGenerate(ctx, cfgRef.get())))
                 .then(literal("reload-config")
                         .executes(ctx -> {
                             ModUpdaterConfig fresh = ModUpdaterConfig.load(configPath);
+                            cfgRef.set(fresh);
                             ctx.getSource().sendSuccess(() -> Component.literal("[MCModUpdater] Config reloaded."), false);
                             return 1;
                         }))
@@ -57,12 +59,11 @@ public final class McModUpdaterForgeServer {
 
     private static int runGenerate(CommandContext<CommandSourceStack> ctx, ModUpdaterConfig cfg) {
         Path gameDir = FMLPaths.GAMEDIR.get();
-        Path modsDir = gameDir.resolve("mods");
         Path outputDir = gameDir.resolve("config").resolve("mcmodupdater").resolve(cfg.outputSubdir);
 
         CommandSourceStack src = ctx.getSource();
         MinecraftServer server = src.getServer();
-        src.sendSuccess(() -> Component.literal("[MCModUpdater] Scanning " + modsDir + " ..."), false);
+        src.sendSuccess(() -> Component.literal("[MCModUpdater] Scanning " + cfg.scanDirs(gameDir) + " ..."), false);
 
         Thread t = new Thread(() -> {
             String loader = "forge";
@@ -71,7 +72,7 @@ public final class McModUpdaterForgeServer {
             String mcVersion = "1.20.1";
             ManifestBuilder builder = new ManifestBuilder(mcVersion, loader, cfg.skipModrinth, cfg.skipCurseForge);
             try {
-                ManifestBuilder.BuildResult r = builder.build(modsDir, outputDir);
+                ManifestBuilder.BuildResult r = builder.build(cfg.scanDirs(gameDir), outputDir, cfg.scanDisabled);
                 server.execute(() -> {
                     src.sendSuccess(() -> Component.literal(
                             "[MCModUpdater] Manifest written: " + r.manifest.mods.size() + " mods, "
