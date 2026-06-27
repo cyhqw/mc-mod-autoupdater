@@ -33,7 +33,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: 8.7
+          gradle-version: 8.8
 
       - name: Cache Gradle dependencies
         uses: actions/cache@v4
@@ -48,7 +48,7 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: Generate Gradle wrapper
-        run: gradle wrapper --gradle-version 8.7 --distribution-type bin
+        run: gradle wrapper --gradle-version 8.8 --distribution-type bin
 
       - name: Build all modules
         run: ./gradlew clean build --no-daemon --stacktrace
