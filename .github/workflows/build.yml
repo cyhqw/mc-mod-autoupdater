@@ -1,0 +1,87 @@
+name: Build Mods
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (Fabric + Forge)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.7
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            .gradle
+            */build
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', 'gradle.properties', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Generate Gradle wrapper
+        run: gradle wrapper --gradle-version 8.7 --distribution-type bin
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v3
+
+      - name: Build all modules
+        run: ./gradlew clean build --no-daemon --stacktrace
+
+      - name: Upload Fabric jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: mc-mod-autoupdater-fabric-1.20.1
+          path: fabric/build/libs/*.jar
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Forge jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: mc-mod-autoupdater-forge-1.20.1
+          path: forge/build/libs/*.jar
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload common jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: mc-mod-autoupdater-common
+          path: common/build/libs/*.jar
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Summarize
+        if: always()
+        run: |
+          echo "## Build Result" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ All modules built successfully." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Build failed. Check the logs above." >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Artifacts will be available for 30 days under the workflow run page." >> $GITHUB_STEP_SUMMARY
