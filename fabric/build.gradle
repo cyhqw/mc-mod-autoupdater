@@ -1,13 +1,26 @@
-plugins {
-    id 'fabric-loom' version "${loomVersion}"
-    id 'java-library'
+// Fabric Loom has no Gradle Plugin Portal marker, so we use the buildscript
+// classpath approach instead of the plugins {} block.
+buildscript {
+    repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
+        mavenCentral()
+    }
+    dependencies {
+        classpath "net.fabricmc:fabric-loom:${loom_version}"
+    }
 }
 
+apply plugin: 'fabric-loom'
+apply plugin: 'java-library'
+
+version = project.mod_version
+group = project.mod_group
+
 dependencies {
-    minecraft "com.mojang:minecraft:${minecraftVersion}"
-    mappings "net.fabricmc:yarn:${yarnMappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${fabricLoaderVersion}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${fabricApiVersion}"
+    minecraft "com.mojang:minecraft:${minecraft_version}"
+    mappings "net.fabricmc:yarn:${yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}"
 
     // Pull in the common module's classes (we shade them into the final jar).
     api project(':common')
@@ -18,14 +31,14 @@ processResources {
     inputs.property "version", project.mod_version
     filesMatching("fabric.mod.json") {
         expand "version": project.mod_version,
-               "minecraft_version": project.minecraftVersion,
-               "loader_version": project.fabricLoaderVersion,
-               "fabric_api_version": project.fabricApiVersion
+               "minecraft_version": project.minecraft_version,
+               "loader_version": project.fabric_loader_version,
+               "fabric_api_version": project.fabric_api_version
     }
 }
 
 base {
-    archivesName = "mc-mod-autoupdater-fabric-${minecraftVersion}"
+    archivesName = "mc-mod-autoupdater-fabric-${minecraft_version}"
 }
 
 jar {
