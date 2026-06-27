@@ -3,14 +3,13 @@ package com.cyhqw.mcmodupdater.forge;
 import com.cyhqw.mcmodupdater.common.config.ModUpdaterConfig;
 import com.cyhqw.mcmodupdater.common.syncer.ModSyncer;
 import com.cyhqw.mcmodupdater.common.util.ModLog;
-import com.mojang.logging.log4j.LogManager;
-import com.mojang.logging.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.loading.FMLPaths;
-import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 

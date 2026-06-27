@@ -4,7 +4,7 @@ import com.cyhqw.mcmodupdater.common.config.ModUpdaterConfig;
 import com.cyhqw.mcmodupdater.common.syncer.ModSyncer;
 import com.cyhqw.mcmodupdater.common.util.ModLog;
 import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
@@ -14,17 +14,17 @@ import org.slf4j.LoggerFactory;
 import java.nio.file.Path;
 
 /**
- * Fabric client entry point.
+ * Fabric 客户端入口。
  *
- * <p>Per the user's spec ("启动时触发更新检查"), this runs the mod sync once
- * when the client is starting up — specifically, on the first client tick.
- * Any updates are reported to the player via the in-game chat HUD.</p>
+ * <p>按照需求（"启动时触发更新检查"），客户端首次 tick 时在后台线程执行一次模组同步。
+ * 同步结果通过游戏内聊天 HUD 反馈给玩家。</p>
  */
 public class McModUpdaterFabricClient implements ClientModInitializer {
 
     public static final Logger LOGGER = LoggerFactory.getLogger("MCModUpdater");
 
     private static boolean syncedOnce = false;
+    private static ModUpdaterConfig config;
 
     @Override
     public void onInitializeClient() {
@@ -32,7 +32,7 @@ public class McModUpdaterFabricClient implements ClientModInitializer {
 
         Path gameDir = FabricLoader.getInstance().getGameDir();
         Path configPath = gameDir.resolve("config").resolve("mcmodupdater").resolve("mcmodupdater.properties");
-        ModUpdaterConfig config = ModUpdaterConfig.load(configPath);
+        config = ModUpdaterConfig.load(configPath);
         try {
             config.save(configPath);
         } catch (Exception e) {
@@ -48,7 +48,7 @@ public class McModUpdaterFabricClient implements ClientModInitializer {
             return;
         }
 
-        ClientLifecycleEvents.CLIENT_TICK_START.register(client -> {
+        ClientTickEvents.START_CLIENT_TICK.register(client -> {
             if (syncedOnce) return;
             syncedOnce = true;
             // Defer to a background thread so we don't stall the render loop.
@@ -58,14 +58,14 @@ public class McModUpdaterFabricClient implements ClientModInitializer {
         });
     }
 
-    private void runSync(MinecraftClient client, ModUpdaterConfig config) {
+    private void runSync(MinecraftClient client, ModUpdaterConfig cfg) {
         Path modsDir = FabricLoader.getInstance().getGameDir().resolve("mods");
-        ModSyncer syncer = new ModSyncer(modsDir, config);
+        ModSyncer syncer = new ModSyncer(modsDir, cfg);
         ModSyncer.SyncResult result = syncer.sync();
-        reportToPlayer(client, result);
+        reportToPlayer(client, result, cfg);
     }
 
-    private void reportToPlayer(MinecraftClient client, ModSyncer.SyncResult result) {
+    private void reportToPlayer(MinecraftClient client, ModSyncer.SyncResult result, ModUpdaterConfig cfg) {
         if (client.player == null) {
             // Player may not be in-game yet (we ran on first tick of main menu).
             // Log instead.
@@ -89,7 +89,7 @@ public class McModUpdaterFabricClient implements ClientModInitializer {
             if (!result.removedOrphans.isEmpty()) {
                 sb.append(", ").append(result.removedOrphans.size()).append(" orphan(s) removed");
             }
-            if (result.changed && config.promptRestart) {
+            if (result.changed && cfg.promptRestart) {
                 sb.append(" — restart the game to apply changes");
             }
         }

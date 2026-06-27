@@ -4,8 +4,8 @@ import com.cyhqw.mcmodupdater.common.config.ModUpdaterConfig;
 import com.cyhqw.mcmodupdater.common.manifest.ManifestBuilder;
 import com.cyhqw.mcmodupdater.common.util.ModLog;
 import com.mojang.brigadier.context.CommandContext;
-import com.mojang.logging.log4j.LogManager;
-import com.mojang.logging.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -66,8 +66,9 @@ public final class McModUpdaterForgeServer {
 
         Thread t = new Thread(() -> {
             String loader = "forge";
-            String mcVersion = server.getMinecraftVersion() != null
-                    ? server.getMinecraftVersion().getName() : "1.20.1";
+            // Forge 1.20.1 doesn't expose server.getMinecraftVersion(); use the
+            // constant from gradle.properties via the mod's own metadata.
+            String mcVersion = "1.20.1";
             ManifestBuilder builder = new ManifestBuilder(mcVersion, loader, cfg.skipModrinth, cfg.skipCurseForge);
             try {
                 ManifestBuilder.BuildResult r = builder.build(modsDir, outputDir);

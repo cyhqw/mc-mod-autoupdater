@@ -76,7 +76,7 @@ public class McModUpdaterFabricServer implements DedicatedServerModInitializer {
             // Detect mod loader: prefer Fabric (we're running on Fabric here), but
             // include the configured loader hint in the manifest meta.
             String loader = "fabric";
-            String mcVersion = ctx.getSource().getServer().getVersion();
+            String mcVersion = "1.20.1";
             ManifestBuilder builder = new ManifestBuilder(mcVersion, loader, cfg.skipModrinth, cfg.skipCurseForge);
             try {
                 ManifestBuilder.BuildResult r = builder.build(modsDir, outputDir);

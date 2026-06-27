@@ -1,7 +1,7 @@
 package com.cyhqw.mcmodupdater.forge;
 
 import com.cyhqw.mcmodupdater.common.util.ModLog;
-import com.mojang.logging.log4j.Logger;
+import org.apache.logging.log4j.Logger;
 
 /** Bridges our common-module logger to Forge's Log4j. */
 final class Log4jSink implements ModLog.Sink {
