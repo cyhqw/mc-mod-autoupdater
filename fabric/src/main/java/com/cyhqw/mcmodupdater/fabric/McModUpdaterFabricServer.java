@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static net.minecraft.server.command.CommandManager.literal;
 
@@ -44,16 +45,16 @@ public class McModUpdaterFabricServer implements DedicatedServerModInitializer {
             LOGGER.warn("Failed to save default config: {}", e.getMessage());
         }
 
-        // Use effectively-final reference for the lambda.
-        final ModUpdaterConfig cfg = config;
+        final AtomicReference<ModUpdaterConfig> cfgRef = new AtomicReference<>(config);
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(literal("mcmodupdater")
                     .requires(src -> src.hasPermissionLevel(2))
                     .then(literal("generate")
-                            .executes(ctx -> runGenerate(ctx, cfg)))
+                            .executes(ctx -> runGenerate(ctx, cfgRef.get())))
                     .then(literal("reload-config")
                             .executes(ctx -> {
                                 ModUpdaterConfig fresh = ModUpdaterConfig.load(configPath);
+                                cfgRef.set(fresh);
                                 ctx.getSource().sendFeedback(() -> Text.literal("[MCModUpdater] Config reloaded."), false);
                                 return 1;
                             }))
@@ -66,10 +67,9 @@ public class McModUpdaterFabricServer implements DedicatedServerModInitializer {
 
     private int runGenerate(CommandContext<ServerCommandSource> ctx, ModUpdaterConfig cfg) {
         Path gameDir = FabricLoader.getInstance().getGameDir();
-        Path modsDir = gameDir.resolve("mods");
         Path outputDir = gameDir.resolve("config").resolve("mcmodupdater").resolve(cfg.outputSubdir);
 
-        ctx.getSource().sendFeedback(() -> Text.literal("[MCModUpdater] Scanning " + modsDir + " ..."), false);
+        ctx.getSource().sendFeedback(() -> Text.literal("[MCModUpdater] Scanning " + cfg.scanDirs(gameDir) + " ..."), false);
 
         // Run on a background thread so we don't freeze the main server thread.
         Thread t = new Thread(() -> {
@@ -79,7 +79,7 @@ public class McModUpdaterFabricServer implements DedicatedServerModInitializer {
             String mcVersion = "1.20.1";
             ManifestBuilder builder = new ManifestBuilder(mcVersion, loader, cfg.skipModrinth, cfg.skipCurseForge);
             try {
-                ManifestBuilder.BuildResult r = builder.build(modsDir, outputDir);
+                ManifestBuilder.BuildResult r = builder.build(cfg.scanDirs(gameDir), outputDir, cfg.scanDisabled);
                 ctx.getSource().getServer().execute(() -> {
                     ctx.getSource().sendFeedback(() -> Text.literal(
                             "[MCModUpdater] Manifest written: " + r.manifest.mods.size() + " mods, "

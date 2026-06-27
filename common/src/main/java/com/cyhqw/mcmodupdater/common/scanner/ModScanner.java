@@ -19,14 +19,20 @@ public final class ModScanner {
     private ModScanner() {}
 
     public static List<ModMetadata> scan(Path modsDir) throws IOException {
+        return scan(modsDir, false);
+    }
+
+    public static List<ModMetadata> scan(Path modsDir, boolean includeDisabled) throws IOException {
         List<ModMetadata> result = new ArrayList<>();
         if (!Files.isDirectory(modsDir)) {
             return result;
         }
         try (Stream<Path> stream = Files.walk(modsDir)) {
             stream.filter(Files::isRegularFile)
-                  .filter(p -> p.getFileName().toString().toLowerCase().endsWith(".jar"))
-                  .filter(p -> !p.getFileName().toString().endsWith(".disabled"))
+                  .filter(p -> {
+                      String n = p.getFileName().toString().toLowerCase();
+                      return n.endsWith(".jar") || (includeDisabled && n.endsWith(".jar.disabled"));
+                  })
                   .forEach(p -> {
                       try {
                           result.add(ModMetadata.fromJar(p));
@@ -43,22 +49,6 @@ public final class ModScanner {
 
     /** Same as {@link #scan(Path)} but also disabled jars (.jar.disabled). */
     public static List<ModMetadata> scanIncludingDisabled(Path modsDir) throws IOException {
-        List<ModMetadata> result = new ArrayList<>();
-        if (!Files.isDirectory(modsDir)) return result;
-        try (Stream<Path> stream = Files.walk(modsDir)) {
-            stream.filter(Files::isRegularFile)
-                  .filter(p -> {
-                      String n = p.getFileName().toString().toLowerCase();
-                      return n.endsWith(".jar") || n.endsWith(".jar.disabled");
-                  })
-                  .forEach(p -> {
-                      try {
-                          result.add(ModMetadata.fromJar(p));
-                      } catch (Exception e) {
-                          result.add(ModMetadata.fromFilename(p.getFileName().toString(), 0L));
-                      }
-                  });
-        }
-        return result;
+        return scan(modsDir, true);
     }
 }

@@ -20,8 +20,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Server-side logic: scans the mods directory, queries Modrinth first then
@@ -59,10 +60,29 @@ public final class ManifestBuilder {
      * @return the in-memory {@link Manifest} that was written
      */
     public BuildResult build(Path modsDir, Path outputDir) throws IOException {
+        return build(List.of(modsDir), outputDir, false);
+    }
+
+    public BuildResult build(Path modsDir, Path outputDir, boolean includeDisabled) throws IOException {
+        return build(List.of(modsDir), outputDir, includeDisabled);
+    }
+
+    public BuildResult build(List<Path> scanDirs, Path outputDir, boolean includeDisabled) throws IOException {
         Files.createDirectories(outputDir);
 
-        List<ModMetadata> scanned = ModScanner.scan(modsDir);
-        ModLog.info("Scanned %d mod(s) in %s", scanned.size(), modsDir);
+        Map<String, ModMetadata> scannedByFile = new LinkedHashMap<>();
+        for (Path scanDir : scanDirs) {
+            List<ModMetadata> dirScan = ModScanner.scan(scanDir, includeDisabled);
+            ModLog.info("Scanned %d mod(s) in %s", dirScan.size(), scanDir);
+            for (ModMetadata meta : dirScan) {
+                ModMetadata previous = scannedByFile.putIfAbsent(meta.jarFilename, meta);
+                if (previous != null) {
+                    ModLog.warn("Duplicate mod filename %s while scanning %s; keeping first occurrence", meta.jarFilename, scanDir);
+                }
+            }
+        }
+        List<ModMetadata> scanned = new ArrayList<>(scannedByFile.values());
+        ModLog.info("Total unique scanned mod(s): %d", scanned.size());
 
         List<ModEntry> found = new ArrayList<>();
         List<MissingEntry> missing = new ArrayList<>();
@@ -85,7 +105,7 @@ public final class ManifestBuilder {
                 miss.modId = meta.modId;
                 miss.version = meta.version;
                 try {
-                    miss.sha1 = HashUtils.sha1(modsDir.resolve(meta.jarFilename));
+                    miss.sha1 = HashUtils.sha1(findScannedFile(scanDirs, meta.jarFilename));
                 } catch (Exception ignored) {}
                 miss.reason = "not_found_on_modrinth_or_curseforge";
                 missing.add(miss);
@@ -177,6 +197,16 @@ public final class ManifestBuilder {
 
         ModLog.warn("Could not resolve: %s (%s) — attempts=%s", meta.jarFilename, meta.modId, attempts);
         return Optional.empty();
+    }
+
+    private static Path findScannedFile(List<Path> scanDirs, String filename) {
+        for (Path scanDir : scanDirs) {
+            Path candidate = scanDir.resolve(filename);
+            if (Files.isRegularFile(candidate)) {
+                return candidate;
+            }
+        }
+        return scanDirs.get(0).resolve(filename);
     }
 
     /** Result of a {@link #build} call. */

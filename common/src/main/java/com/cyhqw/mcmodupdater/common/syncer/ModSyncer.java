@@ -23,6 +23,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import java.util.stream.Stream;
 
 /**
  * Client-side logic: fetch a manifest from a URL, sync the local mods folder
@@ -79,13 +80,20 @@ public final class ModSyncer {
         if (manifest == null || manifest.mods == null) {
             return SyncResult.failure("Manifest was empty or malformed");
         }
+        if (manifest.meta == null) {
+            return SyncResult.failure("Manifest meta block is missing");
+        }
+        String validationError = validateManifest(manifest);
+        if (validationError != null) {
+            return SyncResult.failure(validationError);
+        }
         ModLog.info("Manifest fetched: %d mods, generated %s",
                 manifest.mods.size(), manifest.meta.generatedAt);
 
         // Build a map of existing files by filename.
         Map<String, Path> existing = new HashMap<>();
-        try {
-            Files.list(modsDir).filter(Files::isRegularFile).forEach(p -> {
+        try (Stream<Path> stream = Files.list(modsDir)) {
+            stream.filter(Files::isRegularFile).forEach(p -> {
                 String n = p.getFileName().toString();
                 if (n.toLowerCase().endsWith(".jar") || n.toLowerCase().endsWith(".jar.disabled")) {
                     existing.put(n, p);
@@ -156,8 +164,8 @@ public final class ModSyncer {
     }
 
     private SyncAction syncOne(ModEntry entry, Map<String, Path> existing) {
-        Path target = modsDir.resolve(entry.filename);
-        Path part = modsDir.resolve(entry.filename + ".part");
+        Path target = modsDir.resolve(entry.filename).normalize();
+        Path part = modsDir.resolve(entry.filename + ".part").normalize();
 
         // Skip if file exists with matching hash.
         if (Files.exists(target)) {
@@ -201,6 +209,37 @@ public final class ModSyncer {
             try { Files.deleteIfExists(part); } catch (IOException ignored) {}
             return new SyncAction(entry, ActionStatus.FAILED, e.getMessage());
         }
+    }
+
+    private String validateManifest(Manifest manifest) {
+        Set<String> filenames = new HashSet<>();
+        for (int i = 0; i < manifest.mods.size(); i++) {
+            ModEntry entry = manifest.mods.get(i);
+            if (entry == null) {
+                return "Manifest contains a null mod entry at index " + i;
+            }
+            if (entry.filename == null || entry.filename.isBlank()) {
+                return "Manifest mod entry at index " + i + " is missing filename";
+            }
+            Path target = modsDir.resolve(entry.filename).normalize();
+            if (!target.getParent().equals(modsDir.normalize()) || target.getFileName() == null) {
+                return "Manifest filename is unsafe: " + entry.filename;
+            }
+            String lower = entry.filename.toLowerCase();
+            if (!lower.endsWith(".jar") && !lower.endsWith(".jar.disabled")) {
+                return "Manifest filename is not a jar: " + entry.filename;
+            }
+            if (!filenames.add(entry.filename)) {
+                return "Manifest contains duplicate filename: " + entry.filename;
+            }
+            if (entry.downloadUrl == null || entry.downloadUrl.isBlank()) {
+                return "Manifest entry " + entry.filename + " is missing downloadUrl";
+            }
+            if (config.verifyHash && (entry.sha1 == null || entry.sha1.isBlank())) {
+                return "Manifest entry " + entry.filename + " is missing sha1 while hash verification is enabled";
+            }
+        }
+        return null;
     }
 
     // ------------------------------------------------------------------
