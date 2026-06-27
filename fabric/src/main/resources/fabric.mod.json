@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "mcmodupdater",
+  "version": "${version}",
+  "name": "MC Mod Auto-Updater",
+  "description": "Server scans mods and queries Modrinth/CurseForge to build a JSON manifest; client pulls manifest from a URL and syncs mods at game launch.",
+  "authors": [
+    "cyhqw"
+  ],
+  "contact": {
+    "homepage": "https://github.com/cyhqw/mc-mod-autoupdater",
+    "sources": "https://github.com/cyhqw/mc-mod-autoupdater",
+    "issues": "https://github.com/cyhqw/mc-mod-autoupdater/issues"
+  },
+  "license": "MIT",
+  "icon": "assets/mcmodupdater/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "client": [
+      "com.cyhqw.mcmodupdater.fabric.McModUpdaterFabricClient"
+    ],
+    "server": [
+      "com.cyhqw.mcmodupdater.fabric.McModUpdaterFabricServer"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "~${minecraft_version}",
+    "java": ">=17"
+  },
+  "suggests": {
+    "another-mod": "*"
+  }
+}

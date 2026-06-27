@@ -1,0 +1,35 @@
+plugins {
+    id 'fabric-loom' version "${loomVersion}"
+    id 'java-library'
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${minecraftVersion}"
+    mappings "net.fabricmc:yarn:${yarnMappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${fabricLoaderVersion}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${fabricApiVersion}"
+
+    // Pull in the common module's classes (we shade them into the final jar).
+    api project(':common')
+    include project(':common')
+}
+
+processResources {
+    inputs.property "version", project.mod_version
+    filesMatching("fabric.mod.json") {
+        expand "version": project.mod_version,
+               "minecraft_version": project.minecraftVersion,
+               "loader_version": project.fabricLoaderVersion,
+               "fabric_api_version": project.fabricApiVersion
+    }
+}
+
+base {
+    archivesName = "mc-mod-autoupdater-fabric-${minecraftVersion}"
+}
+
+jar {
+    from("LICENSE") {
+        rename { "${it}_${project.name}" }
+    }
+}

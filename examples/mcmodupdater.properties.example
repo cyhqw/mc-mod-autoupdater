@@ -1,0 +1,48 @@
+# Example mcmodupdater.properties — copy to <game>/config/mcmodupdater/mcmodupdater.properties
+# and edit as needed.
+
+# ----- Server-side config (only used on a dedicated MC server) -----
+
+# Subdirectory (under config/mcmodupdater/) where manifest.json + missing.json
+# are written when you run /mcmodupdater generate.
+server.outputSubdir=manifest-output
+
+# Comma-separated extra directories to scan in addition to the instance mods/ dir.
+# Example: server.extraScanDirs=/opt/mc-extra-mods,/home/me/shared-mods
+server.extraScanDirs=
+
+# Whether to also include .jar.disabled files in the scan.
+server.scanDisabled=false
+
+# Skip the CurseForge fallback entirely (e.g. if no API key configured).
+server.skipCurseForge=false
+
+# Skip the Modrinth lookup (rarely needed).
+server.skipModrinth=false
+
+# ----- Client-side config (used by every player's client) -----
+
+# URL pointing to manifest.json. REQUIRED for client-side sync.
+# Examples:
+#   client.manifestUrl=https://your-host.example.com/mc/manifest.json
+#   client.manifestUrl=https://raw.githubusercontent.com/you/your-repo/main/manifest.json
+client.manifestUrl=
+
+# Sync automatically when the client starts up.
+client.autoSyncOnLaunch=true
+
+# Remove local .jar files in the mods folder that aren't in the manifest.
+# CAUTION: enable only if you want a strict server-defined mod set.
+client.removeOrphans=false
+
+# Keep a .bak copy of overwritten/removed mods instead of deleting them.
+client.backupOldMods=true
+
+# Maximum concurrent downloads.
+client.maxConcurrentDownloads=4
+
+# Verify SHA1 after download and reject mismatches.
+client.verifyHash=true
+
+# Tell the player to restart if anything changed.
+client.promptRestart=true

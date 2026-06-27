@@ -1,0 +1,68 @@
+plugins {
+    id 'net.minecraftforge.gradle' version "${forgeGradleVersion}"
+    id 'java-library'
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${forgeVersion}"
+
+    // Pull in the common module's classes at compile time. At runtime we shade
+    // them into the final jar via the jar task below.
+    api project(':common')
+}
+
+minecraft {
+    mappings channel: 'official', version: minecraftVersion
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                mcmodupdater {
+                    source sourceSets.main
+                }
+            }
+        }
+        server {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                mcmodupdater {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+// Shade the common module into the final jar.
+jar {
+    from(project(':common').sourceSets.main.output)
+    manifest {
+        attributes([
+            "Specification-Title"     : "mcmodupdater",
+            "Specification-Vendor"    : "cyhqw",
+            "Specification-Version"   : "1",
+            "Implementation-Title"    : project.name,
+            "Implementation-Version"  : project.mod_version,
+            "Implementation-Vendor"   : "cyhqw",
+            "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+        ])
+    }
+}
+
+processResources {
+    inputs.property "version", project.mod_version
+    filesMatching("META-INF/mods.toml") {
+        expand "version": project.mod_version,
+               "minecraft_version": project.minecraftVersion,
+               "forge_version": forgeVersion.split('-')[1]
+    }
+}
+
+base {
+    archivesName = "mc-mod-autoupdater-forge-${minecraftVersion}"
+}

@@ -1,0 +1,28 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+issueTrackerURL="https://github.com/cyhqw/mc-mod-autoupdater/issues"
+
+[[mods]]
+modId="mcmodupdater"
+version="${version}"
+displayName="MC Mod Auto-Updater"
+authors="cyhqw"
+description='''
+Server scans mods and queries Modrinth/CurseForge to build a JSON manifest;
+client pulls manifest from a URL and syncs mods at game launch.
+'''
+
+[[dependencies.mcmodupdater]]
+modId="forge"
+mandatory=true
+versionRange="[47,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.mcmodupdater]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1,1.21)"
+ordering="NONE"
+side="BOTH"

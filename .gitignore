@@ -1,0 +1,34 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+out/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+*.ipr
+*.iws
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Minecraft runtime
+run/
+logs/
+crash-reports/
+saves/
+world/
+mods/*.jar
+
+# Local config / secrets
+config/mcmodupdater/mcmodupdater.properties.local
+*.local
+
+# Manifest output (don't commit locally-generated manifests)
+config/mcmodupdater/manifest-output/
