@@ -22,7 +22,7 @@ import java.nio.file.Path;
 @Mod.EventBusSubscriber(modid = McModUpdaterForge.MOD_ID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.MOD)
 public final class McModUpdaterForgeClient {
 
-    private static final org.slf4j.Logger LOGGER = LoggerFactory.getLogger("MCModUpdater");
+    private static final org.apache.logging.log4j.Logger LOGGER = LogManager.getLogger("MCModUpdater");
 
     private static volatile boolean syncedOnce = false;
 
