@@ -1,19 +1,16 @@
 package com.cyhqw.mcmodupdater.forge;
 
 import com.cyhqw.mcmodupdater.common.util.ModLog;
-import net.minecraftforge.eventbus.api.IEventBus;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
- * Forge mod entry point. Forge's @Mod annotation drives registration; we
- * don't need a constructor body because all our handlers are wired up via
- * {@link Mod.EventBusSubscriber} annotations.
+ * Forge 模组入口。@Mod 注解驱动注册，构造函数无需业务逻辑 —— 所有事件处理器
+ * 都通过 {@link Mod.EventBusSubscriber} 注解自动挂载。
  *
- * <p>Server-side: {@link McModUpdaterForgeServer} registers commands.</p>
- * <p>Client-side: {@link McModUpdaterForgeClient} triggers launch-time sync.</p>
+ * <p>服务端：{@link McModUpdaterForgeServer} 注册命令。</p>
+ * <p>客户端：{@link McModUpdaterForgeClient} 在启动时触发同步。</p>
  */
 @Mod(McModUpdaterForge.MOD_ID)
 public final class McModUpdaterForge {
@@ -22,10 +19,10 @@ public final class McModUpdaterForge {
     public static final String MOD_NAME = "MC Mod Auto-Updater";
     public static final String VERSION = "0.1.0";
 
-    private static final Logger LOGGER = LoggerFactory.getLogger("MCModUpdater");
+    private static final Logger LOGGER = LogManager.getLogger("MCModUpdater");
 
     public McModUpdaterForge() {
-        ModLog.setSink(new Slf4jSink(LOGGER));
+        ModLog.setSink(new Log4jSink(LOGGER));
         LOGGER.info("[MCModUpdater] Forge mod loading. mc={}, forge={}", "1.20.1", "47.x");
         // No-op — registration happens via @Mod.EventBusSubscriber annotations.
     }

@@ -28,7 +28,7 @@ public final class McModUpdaterForgeClient {
 
     @SubscribeEvent
     public static void onClientSetup(FMLClientSetupEvent event) {
-        ModLog.setSink(new Slf4jSink(LOGGER));
+        ModLog.setSink(new Log4jSink(LOGGER));
 
         Path configPath = FMLPaths.CONFIGDIR.get().resolve("mcmodupdater/mcmodupdater.properties");
         ModUpdaterConfig config = ModUpdaterConfig.load(configPath);
