@@ -21,10 +21,13 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │  整合包作者 / 服主                                                    │
 │                                                                     │
-│   1. 用 Modrinth 整合包工具（pack-toml / mrpack）或手动生成          │
-│      modrinth.index.json                                            │
-│      （包含每个 mod 的 path / sha1 / sha512 / downloads URL）        │
-│   2. 上传到任意 HTTP/HTTPS 主机（GitHub Pages、S3、Cloudflare R2...） │
+│   1. 把所有 mod 放进 mods/ 目录                                      │
+│   2. 运行本仓库的 scan_mods.py                                       │
+│      → 自动计算每个 jar 的 SHA1/SHA512                               │
+│      → 通过 Modrinth API 反查下载 URL                                │
+│      → 输出 modrinth.index.json（符合 Modrinth 整合包格式）          │
+│      → 未在 Modrinth 上找到的 mod 输出到 missing.txt                 │
+│   3. 上传到任意 HTTP/HTTPS 主机（GitHub Pages、S3、Cloudflare R2...） │
 └─────────────────────────────────────────────────────────────────────┘
                                 │
                                 ▼  HTTPS GET modrinth.index.json
@@ -88,6 +91,7 @@ mc-mod-autoupdater/
 ├── build.gradle              # 根构建文件
 ├── settings.gradle           # 引入 common / fabric / forge 三个子项目
 ├── gradle.properties         # MC / Fabric / Forge 版本号
+├── scan_mods.py              # Python 脚本：扫描 mods/ 生成 modrinth.index.json
 ├── common/                   # 共享 Java 代码，不依赖 MC 类
 │   └── src/main/java/com/cyhqw/mcmodupdater/common/
 │       ├── Constants.java
@@ -128,11 +132,44 @@ mc-mod-autoupdater/
 
 ### 2. 准备 modrinth.index.json
 
-**方式 A：用 Modrinth 官方工具生成**
+**方式 A（推荐）：用本仓库的 `scan_mods.py` 脚本**
+
+把所有 mod 放进一个 `mods/` 目录，在仓库根目录运行：
+
+```bash
+python scan_mods.py
+```
+
+脚本会自动：
+- 递归扫描 `mods/` 下所有 `.jar`
+- 计算每个 jar 的 SHA1 和 SHA512
+- 通过 Modrinth API 用 SHA1 反查下载 URL（`GET /version_file/{sha1}?algorithm=sha1`）
+- 生成 `modrinth.index.json`（符合 Modrinth 整合包格式）
+- 未在 Modrinth 上找到的 mod 写入 `missing.txt`
+
+常用参数示例：
+
+```bash
+# 指定加载器版本（写入 dependencies）
+python scan_mods.py --loader fabric --loader-version 0.15.11
+
+# 自定义整合包信息
+python scan_mods.py --modpack-name "My Pack" --modpack-version 1.0 --mc-version 1.20.1
+
+# 不递归子目录、同时扫描 .jar.disabled
+python scan_mods.py --no-recursive --include-disabled
+
+# 自定义输入输出路径
+python scan_mods.py --mods-dir /opt/server/mods --output /var/www/mc/modrinth.index.json
+```
+
+> 脚本仅用 Python 3.8+ 标准库，**无需 pip install**。完整参数说明见 [脚本章节](#scan_modspy-参数参考) 或运行 `python scan_mods.py --help`。
+
+**方式 B：用 Modrinth 官方工具**
 
 用 [packwiz](https://packwiz.infra.link/) 或 Modrinth 的 [mrpack CLI](https://github.com/modrinth/modpackdl) 生成标准 modrinth.index.json。
 
-**方式 B：手动编写**
+**方式 C：手动编写**
 
 参考 [`examples/modrinth.index.json.example`](examples/modrinth.index.json.example)。每个 mod 条目需要：
 
@@ -267,6 +304,71 @@ manifestUrl=https://example.com/mc/modrinth.index.json
 removeOrphans=true
 backupOldMods=true
 ```
+
+---
+
+## `scan_mods.py` 参数参考
+
+脚本位于仓库根目录 [`scan_mods.py`](scan_mods.py)，仅依赖 Python 3.8+ 标准库。
+
+### 命令行参数
+
+| 参数                      | 默认值                  | 说明                                                            |
+| ------------------------- | ----------------------- | --------------------------------------------------------------- |
+| `--mods-dir`              | `mods`                  | 要扫描的 mods 目录路径                                          |
+| `--output`, `-o`          | `modrinth.index.json`   | 输出文件路径                                                    |
+| `--mc-version`            | `1.20.1`                | Minecraft 版本，写入 `dependencies.minecraft`                   |
+| `--modpack-name`          | `My Modpack`            | 整合包名称，写入 `name`                                         |
+| `--modpack-version`       | `1.0`                   | 整合包版本号，写入 `versionId`                                  |
+| `--loader`                | (空)                    | 加载器类型：`fabric` / `quilt` / `forge` / `neoforge`，与 `--loader-version` 同时使用 |
+| `--loader-version`        | (空)                    | 加载器版本，与 `--loader` 同时使用                              |
+| `--client-env`            | `required`              | 每个文件 `env.client` 的默认值：`required` / `optional` / `unsupported` |
+| `--server-env`            | `optional`              | 每个文件 `env.server` 的默认值                                  |
+| `--include-disabled`      | (flag)                  | 同时扫描 `.jar.disabled` 文件                                   |
+| `--no-recursive`          | (flag)                  | 不递归子目录，仅扫描 `--mods-dir` 顶层                          |
+| `--missing-output`        | `missing.txt`           | 未找到 mod 列表的输出文件；留空则不写                           |
+
+> `--loader` 和 `--loader-version` 必须同时指定或同时省略。
+
+### 退出码
+
+| 退出码 | 含义                                                              |
+| ------ | ----------------------------------------------------------------- |
+| `0`    | 全部 mod 都成功在 Modrinth 上找到，`modrinth.index.json` 已生成  |
+| `1`    | 严重错误（mods 目录不存在、JSON 写入失败等）                      |
+| `2`    | 部分文件未在 Modrinth 上找到，`modrinth.index.json` 仍已生成      |
+
+### `missing.txt` 格式
+
+未找到的 mod 以 TSV（制表符分隔）写入：
+
+```
+# 未在 Modrinth 上找到的 mod 列表
+# 格式: filename <TAB> sha1 <TAB> path <TAB> reason
+
+my-private-mod.jar   a1b2c3d4...   mods/my-private-mod.jar   not_found_on_modrinth
+```
+
+`reason` 可能的值：
+- `not_found_on_modrinth` — Modrinth API 返回 404，该 SHA1 不在 Modrinth 数据库中
+- `sha1_not_in_version_files` — 找到了 version 但其 `files[]` 中没有匹配的 SHA1（罕见，通常意味着该 jar 是私有构建）
+- `no_download_url` — version 响应中匹配的文件条目缺少 `url` 字段
+- `exception: <msg>` — 网络/解析异常
+
+### 工作原理
+
+```
+对每个 .jar 文件:
+  1. 计算 SHA1 和 SHA512
+  2. GET https://api.modrinth.com/v2/version_file/{sha1}?algorithm=sha1
+       - 200 → 返回 version JSON
+       - 404 → 该 jar 不在 Modrinth 上，记入 missing.txt
+  3. 在 version.files[] 中找到 hashes.sha1 匹配的条目
+  4. 提取该条目的 url 字段作为 downloads[0]
+  5. 组装 Modrinth file 条目写入 modrinth.index.json
+```
+
+> Modrinth 的 SHA1 反查 API 是最准确的匹配方式 —— 不依赖文件名或 mod id，直接以 jar 内容哈希为准。即使你重命名了文件，只要内容相同就能正确匹配。
 
 ---
 
