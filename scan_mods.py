@@ -9,21 +9,28 @@ scan_mods.py — 扫描 mods/ 目录，生成符合 Modrinth 整合包格式的 
   python scan_mods.py --loader fabric --loader-version 0.15.11
   python scan_mods.py --include-disabled
   python scan_mods.py --interactive            # 交互式 CLI
+  python scan_mods.py --threads 8              # 多线程并行（默认 4）
 
 要求: Python 3.8+ 标准库（无需 pip install）
 
 工作流程:
   1. 扫描 --mods-dir 下的所有 .jar 文件（默认递归子目录）
   2. 对每个 jar 计算 SHA1 和 SHA512
-  3. 通过 Modrinth API 用 SHA1 反查该文件对应的 version 信息
-     (GET /version_file/{sha1}?algorithm=sha1)
-  4. 若 SHA1 反查失败，回退到按文件名在 Modrinth 上搜索：
-     - GET /version_file/{filename}?algorithm=sha1 是不行的，filename 反查不存在
-     - 改为 GET /search?query=...&facets=[["project_type:mod"]]，找到候选 project
-     - 然后遍历 project 的 version 列表找文件名匹配的，确认该 mod 在 Modrinth
-     - 此时 reason 标记为 "on_modrinth_but_different_jar"
-  5. 写入 modrinth.index.json
-  6. 未在 Modrinth 上找到的 mod 写入 missing.txt（带详细 reason）
+  3. 多线程并行处理每个 jar:
+     a) 通过 Modrinth API 用 SHA1 反查 version_file
+     b) 若 SHA1 反查失败，回退到按文件名搜索:
+        - 从文件名提取关键词，尝试多个查询变体（去空格、加连字符、原始名）
+        - 调 /search API 找候选 project
+        - 遍历候选 project 的 version 列表:
+          * filename 完全匹配 → 用 Modrinth URL+SHA1 (reason=on_modrinth_different_jar_same_filename)
+          * slug 含于文件名 + version_number 匹配 → 用 Modrinth URL+SHA1 (reason=on_modrinth_matched_by_name_and_version)
+          * 找到 project 但无任何匹配 → missing (reason=project_exists_but_no_matching_file)
+          * 完全没找到 → missing (reason=not_found_on_modrinth)
+  4. 写入 modrinth.index.json
+  5. 未在 Modrinth 上找到的 mod 写入 missing.txt
+
+注意：当 SHA1 不符但名称+版本号对上时，使用 Modrinth 上的 URL 和 SHA1 写入 JSON。
+客户端会下载 Modrinth 版本（与本地 jar 内容可能略有差异，但功能等价）。
 
 退出码:
   0 — 全部成功
@@ -36,16 +43,18 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 MODRINTH_API = "https://api.modrinth.com/v2"
-USER_AGENT = "mc-mod-autoupdater-scanner/0.3.0 (https://github.com/cyhqw/mc-mod-autoupdater)"
+USER_AGENT = "mc-mod-autoupdater-scanner/0.4.0 (https://github.com/cyhqw/mc-mod-autoupdater)"
 HTTP_TIMEOUT = 20  # seconds
 MAX_RETRIES = 2
 
@@ -149,15 +158,27 @@ def find_file_in_version(version: Dict[str, Any], sha1_hash: str) -> Optional[Di
     return None
 
 
-def extract_search_query(filename: str) -> str:
+# ---------------------------------------------------------------------------
+# 文件名解析与查询变体生成
+# ---------------------------------------------------------------------------
+
+# 用于从文件名中识别版本号的正则：1.20-1.4.15 / 1.20.1-14.1.20 / mc1.20.1-0.5.3 等
+VERSION_RE = re.compile(
+    r"(\d+\.\d+(?:\.\d+)?(?:[-_.]\d+)*"  # 主版本号
+    r"(?:\+\w+)?"                          # 可选 +xxx 后缀
+    r"(?:[-.](?:beta|alpha|rc|hotfix|fix|build)\d*)?)",
+    re.IGNORECASE,
+)
+
+# 加载器标识
+LOADER_TOKENS = {"forge", "fabric", "quilt", "neoforge", "neoforge", "universal", "all", "client", "server"}
+
+
+def parse_filename(filename: str) -> Dict[str, str]:
     """
-    从 jar 文件名提取用于搜索的关键词。
-    规则：
-      - 去掉 [xxx] 前缀（中文标注）
-      - 去掉 .jar / .jar.disabled 后缀
-      - 去掉版本号部分（-1.20.1、-mc1.20.1-0.5.3 等）
-      - 去掉 loader 标识（-forge、-fabric）
-      - 把下划线/空格作为词分隔
+    从 jar 文件名解析出 mod 名、版本号、加载器。
+    返回 dict: {name, version, loader, name_variants}
+    name_variants 是用于搜索的多个变体列表（去空格、加连字符、原始等）。
     """
     name = filename
     # 去 [xxx] 前缀
@@ -172,31 +193,180 @@ def extract_search_query(filename: str) -> str:
         if name.lower().endswith(suffix):
             name = name[: -len(suffix)]
             break
-    # 按常见分隔符切，过滤版本号和 loader 标识
-    import re
+
+    # 按 - 或 _ 切分（保留原始顺序）
     tokens = re.split(r"[-_\s]+", name)
-    keywords = []
-    stop_patterns = (
-        r"^\d+(\.\d+)*$",          # 纯版本号
-        r"^v?\d",                    # v 开头或数字开头
-        r"^(forge|fabric|quilt|neoforge|neoforge|universal|all|client|server|api|core|lib|library)$",
-        r"^mc\d",                    # mc1.20.1
-        r"^\d+pack",                 # 0Pack2Reload 这种
-        r"^\d+$",                    # 纯数字
-        r"^build$", r"^beta$", r"^alpha$", r"^release$", r"^snapshot$",
-        r"^hotfix$", r"^fix$", r"^patch$",
-    )
+
+    # 找版本号 token 的位置（第一个匹配 VERSION_RE 的 token）
+    version_start = None
+    version_str = ""
+    for i, tok in enumerate(tokens):
+        if VERSION_RE.search(tok) and any(c.isdigit() for c in tok):
+            version_start = i
+            version_str = tok
+            # 尝试拼接后续版本号 token（如 1.20 - 1.4.15 中 1.20 也是版本）
+            break
+    # 如果第一个 token 就是版本号开头，向后找 mod 名
+    if version_start is None:
+        # 找不到版本号，全名作为 mod 名
+        mod_name = name
+    else:
+        mod_name = "-".join(tokens[:version_start])
+
+    # 加载器
+    loader = None
     for tok in tokens:
-        tok = tok.strip()
-        if not tok:
+        if tok.lower() in LOADER_TOKENS:
+            loader = tok.lower()
+            break
+
+    # 生成搜索变体
+    variants = set()
+    if mod_name:
+        variants.add(mod_name)
+        variants.add(mod_name.replace("_", " "))
+        variants.add(mod_name.replace("_", "-"))
+        variants.add(mod_name.replace(" ", "-"))
+        variants.add(mod_name.replace(" ", ""))
+        variants.add(mod_name.replace("-", ""))
+        # 去掉尾部数字（如 ExtendedAE2 → ExtendedAE）
+        stripped = re.sub(r"\d+$", "", mod_name)
+        if stripped and stripped != mod_name:
+            variants.add(stripped)
+            variants.add(stripped.replace("_", "-"))
+    variants.discard("")
+
+    return {
+        "name": mod_name or name,
+        "version": version_str,
+        "loader": loader or "",
+        "name_variants": sorted(variants),
+    }
+
+
+def extract_search_query(filename: str) -> str:
+    """旧接口：保留以兼容。返回 name_variants 的第一个。"""
+    return parse_filename(filename)["name_variants"][0] if parse_filename(filename)["name_variants"] else filename
+
+
+# ---------------------------------------------------------------------------
+# 名称 + 版本号匹配
+# ---------------------------------------------------------------------------
+
+def normalize_name(s: str) -> str:
+    """归一化名称：小写、去空格/连字符/下划线。"""
+    return re.sub(r"[\s\-_]+", "", (s or "").lower())
+
+
+def version_matches(version_str: str, version_number: str) -> bool:
+    """
+    判断文件名解析出的版本号与 Modrinth version_number 是否匹配。
+    规则（任一满足即匹配）：
+      - 完全相等（忽略大小写）
+      - version_str 是 version_number 的子串
+      - version_number 是 version_str 的子串
+      - 去掉常见前缀后相等
+    """
+    if not version_str or not version_number:
+        return False
+    a = version_str.lower().strip()
+    b = version_number.lower().strip()
+    if a == b:
+        return True
+    if a in b or b in a:
+        return True
+    # 去掉 "v" 前缀、"mc" 前缀、loader 后缀
+    a_clean = re.sub(r"^(v|mc)", "", a)
+    b_clean = re.sub(r"^(v|mc)", "", b)
+    a_clean = re.sub(r"(forge|fabric|quilt|neoforge)$", "", a_clean)
+    b_clean = re.sub(r"(forge|fabric|quilt|neoforge)$", "", b_clean)
+    if a_clean == b_clean:
+        return True
+    return False
+
+
+def find_best_match_in_candidates(
+    filename: str,
+    parsed: Dict[str, str],
+    candidates: List[Dict[str, Any]],
+) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], str]:
+    """
+    在候选 project 列表中查找最佳匹配。
+    返回 (version, file, match_type) 或 (None, None, "")。
+
+    match_type 取值:
+      "filename_exact"           - 文件名完全匹配
+      "name_and_version"         - slug 含于文件名 + version_number 匹配
+      "name_only"                - slug 含于文件名（无版本号匹配，作为最后兜底）
+    """
+    target_filename = filename.lower()
+    target_name = parsed["name"]
+    target_version = parsed["version"]
+    target_name_norm = normalize_name(target_name)
+
+    # 第一轮：文件名完全匹配
+    for cand in candidates:
+        slug = cand.get("slug") or cand.get("project_id")
+        if not slug:
             continue
-        if any(re.match(p, tok, re.IGNORECASE) for p in stop_patterns):
+        try:
+            versions = get_project_versions(slug)
+        except Exception:
             continue
-        keywords.append(tok)
-    # 如果一个 keyword 都没拿到，回退用全名（去后缀）
-    if not keywords:
-        return name
-    return " ".join(keywords[:3])  # 最多用前 3 个
+        for v in versions:
+            for f in v.get("files", []):
+                if (f.get("filename") or "").lower() == target_filename:
+                    return v, f, "filename_exact"
+        time.sleep(0.05)
+
+    # 第二轮：slug 含于文件名 + version_number 匹配
+    for cand in candidates:
+        slug = cand.get("slug") or ""
+        title = cand.get("title") or ""
+        slug_norm = normalize_name(slug)
+        title_norm = normalize_name(title)
+        # 检查 slug 或 title 是否含于文件名（归一化后）
+        filename_norm = normalize_name(filename)
+        if not slug_norm or not filename_norm:
+            continue
+        name_in_filename = (slug_norm in filename_norm) or (title_norm in filename_norm)
+        if not name_in_filename:
+            continue
+        try:
+            versions = get_project_versions(slug)
+        except Exception:
+            continue
+        for v in versions:
+            vnum = v.get("version_number", "") or ""
+            if version_matches(target_version, vnum):
+                for f in v.get("files", []):
+                    # 优先取 loader 匹配的文件，否则取第一个
+                    fname_lower = (f.get("filename") or "").lower()
+                    if parsed["loader"] and parsed["loader"] in fname_lower:
+                        return v, f, "name_and_version"
+                # 没找到 loader 匹配，取第一个文件
+                for f in v.get("files", []):
+                    return v, f, "name_and_version"
+        time.sleep(0.05)
+
+    # 第三轮：slug 含于文件名（不要求版本号匹配）
+    for cand in candidates:
+        slug = cand.get("slug") or ""
+        slug_norm = normalize_name(slug)
+        filename_norm = normalize_name(filename)
+        if not slug_norm or slug_norm not in filename_norm:
+            continue
+        try:
+            versions = get_project_versions(slug)
+        except Exception:
+            continue
+        if versions:
+            v = versions[0]
+            for f in v.get("files", []):
+                return v, f, "name_only"
+        time.sleep(0.05)
+
+    return None, None, ""
 
 
 def find_matching_version_by_filename(
@@ -204,10 +374,7 @@ def find_matching_version_by_filename(
     game_version: str,
     candidates: List[Dict[str, Any]],
 ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
-    """
-    在候选 project 列表中，找到某个 version 的 file.filename 与传入 filename 完全匹配的条目。
-    返回 (version, file) 或 (None, None)。
-    """
+    """旧接口：保留以兼容。仅做文件名完全匹配。"""
     target = filename.lower()
     for cand in candidates:
         slug = cand.get("slug") or cand.get("project_id")
@@ -221,7 +388,7 @@ def find_matching_version_by_filename(
             for f in v.get("files", []):
                 if (f.get("filename") or "").lower() == target:
                     return v, f
-        time.sleep(0.1)  # 友善 rate limit
+        time.sleep(0.1)
     return None, None
 
 
@@ -257,14 +424,22 @@ def build_file_entry(
 ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
     """
     为单个 jar 构建 Modrinth file 条目。
-    返回 (entry, missing_info)；entry 为 None 表示未找到。
+    返回 (entry, missing_info)。
 
-    策略：
+    策略:
       1. SHA1 反查 Modrinth version_file → 命中即用
-      2. 回退：按文件名提取关键词搜索 Modrinth，找到候选 project 后查 version 列表，
-         若有文件名完全匹配 → 标记 on_modrinth_but_different_jar（不写入 modrinth.index.json，
-         因为 SHA1 不匹配无法校验；但 missing_info.reason 更精确）
-      3. 仍无 → not_found_on_modrinth
+      2. 文件名搜索回退:
+         a) 文件名完全匹配 → 用 Modrinth URL+SHA1 (match_type=filename_exact,
+            但本地 SHA1 不同，所以 reason 标记 on_modrinth_different_jar_same_filename)
+         b) slug 含于文件名 + version_number 匹配 → 用 Modrinth URL+SHA1
+            (match_type=name_and_version)
+         c) slug 含于文件名（不要求版本号匹配） → 用 Modrinth URL+SHA1
+            (match_type=name_only，更弱的匹配，可能误判)
+         d) 找到 project 但无任何匹配 → missing (reason=project_exists_but_no_matching_file)
+         e) 完全没找到 → missing (reason=not_found_on_modrinth)
+
+    注意: 当走 fallback 路径(b/c)时，写入 JSON 的是 Modrinth 上的 SHA1，
+    客户端会下载 Modrinth 版本（本地 jar 与 Modrinth 上的可能略有差异，但功能等价）。
     """
     try:
         rel = jar.relative_to(mods_dir.parent)
@@ -297,7 +472,6 @@ def build_file_entry(
                 "reason": "no_download_url",
                 "version_id": version.get("id"), "project_id": version.get("project_id"),
             }
-        # SHA1 命中 version 但 files 里没有匹配条目（罕见）
         return None, {
             "filename": jar.name, "path": path_str, "sha1": sha1_hash, "size": size,
             "reason": "sha1_not_in_version_files",
@@ -306,39 +480,76 @@ def build_file_entry(
 
     # 2. 文件名搜索回退
     if enable_fallback_search:
-        query = extract_search_query(jar.name)
-        if query:
+        parsed = parse_filename(jar.name)
+        # 用多个变体搜索，合并候选
+        all_candidates: Dict[str, Dict[str, Any]] = {}  # slug → cand
+        for variant in parsed["name_variants"][:4]:  # 最多用前 4 个变体
             try:
-                candidates = search_modrinth(query, limit=5)
+                hits = search_modrinth(variant, limit=5)
             except Exception:
-                candidates = []
-            if candidates:
-                v_matched, f_matched = find_matching_version_by_filename(
-                    jar.name, game_version, candidates)
-                if v_matched is not None and f_matched is not None:
-                    # 在 Modrinth 上找到了同名文件，但 SHA1 不同
-                    return None, {
+                hits = []
+            for h in hits:
+                slug = h.get("slug")
+                if slug and slug not in all_candidates:
+                    all_candidates[slug] = h
+            time.sleep(0.05)
+        candidates = list(all_candidates.values())
+
+        if candidates:
+            v_matched, f_matched, match_type = find_best_match_in_candidates(
+                jar.name, parsed, candidates)
+            if v_matched is not None and f_matched is not None:
+                # 用 Modrinth 上的 URL 和 SHA1 写入 JSON
+                modrinth_sha1 = (f_matched.get("hashes", {}) or {}).get("sha1", "")
+                modrinth_sha512 = (f_matched.get("hashes", {}) or {}).get("sha512", "")
+                download_url = f_matched.get("url") or ""
+                # 用 v_matched.project_id 反查 candidates 找到真正匹配的 slug
+                matched_project_id = v_matched.get("project_id")
+                matched_slug = ""
+                matched_title = ""
+                for c in candidates:
+                    if c.get("project_id") == matched_project_id:
+                        matched_slug = c.get("slug", "")
+                        matched_title = c.get("title", "")
+                        break
+                if download_url:
+                    file_size = f_matched.get("size") or size
+                    entry = {
+                        "path": path_str,
+                        "hashes": {
+                            "sha1": modrinth_sha1,
+                            "sha512": modrinth_sha512,
+                        },
+                        "downloads": [download_url],
+                        "fileSize": int(file_size),
+                        "env": {"client": client_env, "server": server_env},
+                    }
+                    # 同时记录 missing_info 用于日志展示（但 entry 优先）
+                    miss_info = {
                         "filename": jar.name, "path": path_str,
                         "sha1_local": sha1_hash,
-                        "sha1_modrinth": (f_matched.get("hashes", {}) or {}).get("sha1", ""),
+                        "sha1_modrinth": modrinth_sha1,
                         "size": size,
-                        "reason": "on_modrinth_but_different_jar",
-                        "modrinth_project_slug": (candidates[0].get("slug") if candidates else ""),
-                        "modrinth_project_id": (candidates[0].get("project_id") if candidates else ""),
+                        "reason": f"on_modrinth_matched_{match_type}",
+                        "modrinth_project_slug": matched_slug,
+                        "modrinth_project_title": matched_title,
+                        "modrinth_project_id": matched_project_id,
                         "modrinth_version_id": v_matched.get("id"),
-                        "modrinth_file_url": f_matched.get("url", ""),
-                        "search_query_used": query,
+                        "modrinth_version_number": v_matched.get("version_number"),
+                        "modrinth_file_url": download_url,
+                        "modrinth_file_filename": f_matched.get("filename"),
                     }
-                # 没找到文件名匹配，但项目可能存在 —— 标记 project_exists_but_no_matching_file
-                top = candidates[0]
-                return None, {
-                    "filename": jar.name, "path": path_str, "sha1": sha1_hash, "size": size,
-                    "reason": "project_exists_but_no_matching_file",
-                    "modrinth_project_slug": top.get("slug"),
-                    "modrinth_project_id": top.get("project_id"),
-                    "modrinth_project_title": top.get("title"),
-                    "search_query_used": query,
-                }
+                    return entry, miss_info
+
+            # 没找到任何匹配，但项目存在
+            top = candidates[0]
+            return None, {
+                "filename": jar.name, "path": path_str, "sha1": sha1_hash, "size": size,
+                "reason": "project_exists_but_no_matching_file",
+                "modrinth_project_slug": top.get("slug"),
+                "modrinth_project_id": top.get("project_id"),
+                "modrinth_project_title": top.get("title"),
+            }
 
     # 3. 完全未找到
     return None, {
@@ -360,8 +571,10 @@ def render_missing_table(missing: List[Dict[str, Any]]) -> str:
     for i, m in enumerate(missing, 1):
         size = human_size(m.get("size", 0))
         reason = m.get("reason", "unknown")
-        # 给 reason 加上下文
-        if reason == "on_modrinth_but_different_jar":
+        if reason.startswith("on_modrinth_matched_"):
+            extra = f" (project={m.get('modrinth_project_slug')} ver={m.get('modrinth_version_number')})"
+            reason_display = reason + extra
+        elif reason == "on_modrinth_but_different_jar":
             extra = f" (project={m.get('modrinth_project_slug')})"
             reason_display = reason + extra
         elif reason == "project_exists_but_no_matching_file":
@@ -374,10 +587,16 @@ def render_missing_table(missing: List[Dict[str, Any]]) -> str:
 
 
 def reason_summary(reason: str) -> str:
+    if reason.startswith("on_modrinth_matched_filename_exact"):
+        return "Modrinth 上有同名 jar，但本地 SHA1 不同 → 已用 Modrinth URL+SHA1 写入 JSON（客户端会下载 Modrinth 版本）"
+    if reason.startswith("on_modrinth_matched_name_and_version"):
+        return "Modrinth 上有此 mod，slug 含于文件名 + 版本号匹配 → 已用 Modrinth URL+SHA1 写入 JSON"
+    if reason.startswith("on_modrinth_matched_name_only"):
+        return "Modrinth 上有此 mod，slug 含于文件名（未匹配版本号，弱匹配） → 已用 Modrinth URL+SHA1 写入 JSON"
     return {
         "not_found_on_modrinth": "Modrinth 上完全没有此 mod（搜索 0 命中）",
-        "project_exists_but_no_matching_file": "Modrinth 上有此 mod 项目，但没有任何 version 的文件名与本地 jar 匹配（可能是不同 loader / 版本 / 分支）",
-        "on_modrinth_but_different_jar": "Modrinth 上有同名文件，但 SHA1 与本地 jar 不同（本地 jar 可能来自 CurseForge 或被修改过）",
+        "project_exists_but_no_matching_file": "Modrinth 上有此 mod 项目，但没有任何 version 的文件名匹配且版本号不匹配",
+        "on_modrinth_but_different_jar": "Modrinth 上有同名文件，但 SHA1 与本地 jar 不同（旧 reason，新版已被 on_modrinth_matched_filename_exact 替代）",
         "sha1_not_in_version_files": "SHA1 命中了 version 但 files 数组里没有匹配条目（罕见，Modrinth API 数据异常）",
         "no_download_url": "version 响应中匹配的文件条目缺少 url 字段（罕见）",
         "exception": "网络/解析异常",
@@ -397,43 +616,67 @@ def run_scan(args: argparse.Namespace) -> int:
     print(f"[INFO] mods 目录: {mods_dir}")
     print(f"[INFO] 递归: {not args.no_recursive}，包含 disabled: {args.include_disabled}")
     print(f"[INFO] 文件名搜索回退: {args.enable_fallback_search}")
+    print(f"[INFO] 并发线程数: {args.threads}")
 
     jars = collect_jars(mods_dir, args.include_disabled, recursive=not args.no_recursive)
     if not jars:
         print(f"[WARN] {mods_dir} 下没有 .jar 文件", file=sys.stderr)
     else:
-        print(f"[INFO] 扫描到 {len(jars)} 个 .jar 文件")
+        print(f"[INFO] 扫描到 {len(jars)} 个 .jar 文件，开始并行处理...")
 
     entries: List[Dict[str, Any]] = []
     missing: List[Dict[str, Any]] = []
+    # 按文件名索引结果，保证输出顺序稳定
+    results_by_name: Dict[str, Tuple[int, Optional[Dict[str, Any]], Optional[Dict[str, Any]]]] = {}
 
-    for i, jar in enumerate(jars, 1):
-        prefix = f"[{i:>3}/{len(jars)}]"
-        size = jar.stat().st_size
-        print(f"{prefix} {jar.name} ({human_size(size)}) — ", end="", flush=True)
-
+    def process_one(idx_and_jar: Tuple[int, Path]) -> Tuple[int, str, Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        idx, jar = idx_and_jar
         try:
             entry, miss = build_file_entry(
                 jar, mods_dir, args.client_env, args.server_env,
                 args.mc_version, args.enable_fallback_search,
             )
         except Exception as e:
-            print(f"ERROR: {e}")
-            missing.append({
+            return idx, jar.name, None, {
                 "filename": jar.name,
                 "path": str(jar.relative_to(mods_dir.parent)).replace("\\", "/"),
                 "reason": f"exception: {e}",
-            })
-            continue
+            }
+        return idx, jar.name, entry, miss
 
+    start_time = time.time()
+    with ThreadPoolExecutor(max_workers=max(1, args.threads)) as pool:
+        futures = [pool.submit(process_one, (i, jar)) for i, jar in enumerate(jars)]
+        completed = 0
+        for fut in as_completed(futures):
+            try:
+                idx, name, entry, miss = fut.result()
+            except Exception as e:
+                print(f"[ERROR] future failed: {e}", file=sys.stderr)
+                continue
+            completed += 1
+            results_by_name[name] = (idx, entry, miss)
+            # 实时输出（顺序可能乱，但带进度）
+            size = jars[idx].stat().st_size
+            if entry is not None:
+                if miss and miss.get("reason", "").startswith("on_modrinth_matched_"):
+                    print(f"[{completed:>3}/{len(jars)}] {name} ({human_size(size)}) — FOUND (via {miss['reason']}, project={miss.get('modrinth_project_slug')}, modr_ver={miss.get('modrinth_version_number')})")
+                else:
+                    print(f"[{completed:>3}/{len(jars)}] {name} ({human_size(size)}) — FOUND  url={entry['downloads'][0][:80]}...")
+            else:
+                reason = miss.get("reason", "unknown") if miss else "unknown"
+                print(f"[{completed:>3}/{len(jars)}] {name} ({human_size(size)}) — NOT FOUND ({reason})")
+
+    # 按 jar 原始顺序整理结果
+    for jar in jars:
+        idx, entry, miss = results_by_name.get(jar.name, (0, None, None))
         if entry is not None:
-            print(f"FOUND  url={entry['downloads'][0][:80]}...")
             entries.append(entry)
-        else:
-            reason = miss.get("reason", "unknown") if miss else "unknown"
-            print(f"NOT FOUND ({reason})")
-            if miss:
-                missing.append(miss)
+        elif miss is not None:
+            missing.append(miss)
+
+    elapsed = time.time() - start_time
+    print(f"[INFO] 并行处理耗时: {elapsed:.1f}s")
 
     # 组装 modrinth.index.json
     dependencies: Dict[str, str] = {"minecraft": args.mc_version}
@@ -474,7 +717,9 @@ def run_scan(args: argparse.Namespace) -> int:
             f.write("# 格式: filename <TAB> sha1 <TAB> path <TAB> reason <TAB> extra\n\n")
             for m in missing:
                 extra = ""
-                if m.get("reason") == "on_modrinth_but_different_jar":
+                if m.get("reason", "").startswith("on_modrinth_matched_"):
+                    extra = f"modrinth_slug={m.get('modrinth_project_slug')} modrinth_ver={m.get('modrinth_version_number')} modrinth_url={m.get('modrinth_file_url')}"
+                elif m.get("reason") == "on_modrinth_but_different_jar":
                     extra = f"modrinth_slug={m.get('modrinth_project_slug')} modrinth_url={m.get('modrinth_file_url')}"
                 elif m.get("reason") == "project_exists_but_no_matching_file":
                     extra = f"modrinth_slug={m.get('modrinth_project_slug')} title=\"{m.get('modrinth_project_title')}\""
@@ -561,14 +806,22 @@ def interactive_cli() -> int:
     fallback_search = yes_no("SHA1 反查失败时启用文件名搜索回退? (Y/n, 更慢但 reason 更精确): ", default=True)
     print()
 
-    # 6. env
+    # 6. 线程数
+    threads_input = prompt("并发线程数 (回车=4): ", "4").strip() or "4"
+    try:
+        threads = max(1, int(threads_input))
+    except ValueError:
+        threads = 4
+    print()
+
+    # 7. env
     print("文件 env 字段:")
     print("  client/server 取值: required / optional / unsupported")
     client_env = prompt("env.client (回车=required): ", "required").strip() or "required"
     server_env = prompt("env.server (回车=optional): ", "optional").strip() or "optional"
     print()
 
-    # 7. 确认
+    # 8. 确认
     print("=" * 70)
     print("配置确认:")
     print(f"  mods 目录:           {mods_dir}")
@@ -583,6 +836,7 @@ def interactive_cli() -> int:
     print(f"  递归扫描:            {recursive}")
     print(f"  包含 disabled:       {include_disabled}")
     print(f"  文件名搜索回退:      {fallback_search}")
+    print(f"  并发线程数:          {threads}")
     print(f"  env.client:          {client_env}")
     print(f"  env.server:          {server_env}")
     print("=" * 70)
@@ -605,6 +859,7 @@ def interactive_cli() -> int:
         no_recursive=not recursive,
         missing_output="missing.txt",
         enable_fallback_search=fallback_search,
+        threads=threads,
     )
     return run_scan(args)
 
@@ -691,6 +946,10 @@ def main() -> int:
         "--no-fallback-search", dest="enable_fallback_search",
         action="store_false", default=True,
         help="SHA1 反查失败时不启用文件名搜索回退（更快，但 reason 只能笼统报 not_found_on_modrinth）",
+    )
+    parser.add_argument(
+        "--threads", "-t", type=int, default=4,
+        help="并发线程数（默认: 4）",
     )
     parser.add_argument(
         "--missing-output", default="missing.txt",
