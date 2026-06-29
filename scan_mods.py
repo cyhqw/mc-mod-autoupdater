@@ -176,9 +176,20 @@ LOADER_TOKENS = {"forge", "fabric", "quilt", "neoforge", "neoforge", "universal"
 
 def parse_filename(filename: str) -> Dict[str, str]:
     """
-    从 jar 文件名解析出 mod 名、版本号、加载器。
-    返回 dict: {name, version, loader, name_variants}
-    name_variants 是用于搜索的多个变体列表（去空格、加连字符、原始等）。
+    从 jar 文件名解析出 mod 名、版本号、加载器、MC 版本。
+    返回 dict: {name, version, mc_version, loader, name_variants}
+
+    解析规则（以 "ExtendedAE-1.20-1.4.15-forge.jar" 为例）:
+      - tokens = [ExtendedAE, 1.20, 1.4.15, forge]
+      - loader = "forge" (匹配 LOADER_TOKENS)
+      - 从前往后找第一个匹配 VERSION_RE 的 token，作为 mc_version = "1.20"
+      - 从 mc_version 之后找下一个版本号 token，作为 mod 版本 = "1.4.15"
+      - mod name = mc_version 之前的 tokens 拼接 = "ExtendedAE"
+
+    特殊情况:
+      - 没有 mc 版本前缀（如 "sodium-0.5.3.jar"）: mc_version="", version="0.5.3"
+      - 只有 mc 版本没有 mod 版本（如 "fabric-api-1.20.1.jar"）: version=""
+      - 文件名前缀 [中文标注] 会先去掉
     """
     name = filename
     # 去 [xxx] 前缀
@@ -197,28 +208,53 @@ def parse_filename(filename: str) -> Dict[str, str]:
     # 按 - 或 _ 切分（保留原始顺序）
     tokens = re.split(r"[-_\s]+", name)
 
-    # 找版本号 token 的位置（第一个匹配 VERSION_RE 的 token）
-    version_start = None
-    version_str = ""
-    for i, tok in enumerate(tokens):
-        if VERSION_RE.search(tok) and any(c.isdigit() for c in tok):
-            version_start = i
-            version_str = tok
-            # 尝试拼接后续版本号 token（如 1.20 - 1.4.15 中 1.20 也是版本）
-            break
-    # 如果第一个 token 就是版本号开头，向后找 mod 名
-    if version_start is None:
-        # 找不到版本号，全名作为 mod 名
-        mod_name = name
-    else:
-        mod_name = "-".join(tokens[:version_start])
-
     # 加载器
     loader = None
-    for tok in tokens:
+    loader_idx = None
+    for i, tok in enumerate(tokens):
         if tok.lower() in LOADER_TOKENS:
             loader = tok.lower()
+            loader_idx = i
             break
+
+    # 找所有版本号 token（匹配 VERSION_RE 且含数字）
+    version_indices = []
+    for i, tok in enumerate(tokens):
+        if loader_idx is not None and i == loader_idx:
+            continue
+        if VERSION_RE.search(tok) and any(c.isdigit() for c in tok):
+            version_indices.append(i)
+
+    mc_version = ""
+    version_str = ""
+    mod_name_end = len(tokens)
+    if loader_idx is not None:
+        mod_name_end = loader_idx
+
+    if version_indices:
+        # 第一个版本号通常是 mc 版本（如 1.20, 1.20.1, mc1.20.1）
+        first_vi = version_indices[0]
+        mc_version = tokens[first_vi]
+        # mod name 在第一个版本号之前
+        mod_name_end = min(mod_name_end, first_vi)
+        # 如果有第二个版本号，且第二个版本号紧跟在 mc 版本之后（中间无 mod 名 token），它是 mod 版本
+        if len(version_indices) >= 2:
+            second_vi = version_indices[1]
+            # 检查 first_vi 和 second_vi 之间是否有非版本号 token
+            # 如果中间没有 token（即 second_vi == first_vi + 1），第二个就是 mod 版本
+            # 如果中间有 token，可能 mc_version 其实是 mod 版本（如 sodium-0.5.3）
+            if second_vi == first_vi + 1:
+                version_str = tokens[second_vi]
+            else:
+                # 第一个版本号其实是 mod 版本（如 sodium-0.5.3.jar）
+                version_str = mc_version
+                mc_version = ""
+        else:
+            # 只有一个版本号，它是 mod 版本（如 sodium-0.5.3.jar）
+            version_str = mc_version
+            mc_version = ""
+
+    mod_name = "-".join(tokens[:mod_name_end]) if mod_name_end > 0 else name
 
     # 生成搜索变体
     variants = set()
@@ -239,6 +275,7 @@ def parse_filename(filename: str) -> Dict[str, str]:
     return {
         "name": mod_name or name,
         "version": version_str,
+        "mc_version": mc_version,
         "loader": loader or "",
         "name_variants": sorted(variants),
     }
@@ -261,27 +298,46 @@ def normalize_name(s: str) -> str:
 def version_matches(version_str: str, version_number: str) -> bool:
     """
     判断文件名解析出的版本号与 Modrinth version_number 是否匹配。
+    严格匹配，避免误升级到最新版本。
+
     规则（任一满足即匹配）：
-      - 完全相等（忽略大小写）
-      - version_str 是 version_number 的子串
-      - version_number 是 version_str 的子串
-      - 去掉常见前缀后相等
+      - 去掉 loader/+.xxx 后缀后完全相等
+      - version_number 去掉 loader/+.xxx 后缀后，按 - 切段，
+        version_str 作为其中一段（或多段拼接）出现
+
+    例如:
+      version_str="1.4.15", version_number="1.20-1.4.15-forge" → True
+        b_base="1.20-1.4.15", 按 - 切段 ["1.20", "1.4.15"], "1.4.15" in 列表 → True
+      version_str="1.4.15", version_number="1.20-1.4.12-forge" → False
+        b_base="1.20-1.4.12", 切段 ["1.20", "1.4.12"], "1.4.15" 不在 → False
+      version_str="14.1.20", version_number="14.1.20+forge-1.20.1" → True
+        b_base="14.1.20", 切段 ["14.1.20"], 完全相等 → True
+      version_str="0.5.3", version_number="mc1.20.1-0.5.3" → True
+        b_base="mc1.20.1-0.5.3", 切段 ["mc1.20.1", "0.5.3"], "0.5.3" in 列表 → True
     """
     if not version_str or not version_number:
         return False
     a = version_str.lower().strip()
     b = version_number.lower().strip()
-    if a == b:
+
+    # 去掉 +xxx 后缀
+    a_base = a.split("+")[0]
+    b_base = b.split("+")[0]
+
+    # 去掉末尾的 -loader / .loader
+    for loader_kw in ("forge", "fabric", "quilt", "neoforge"):
+        a_base = re.sub(rf"[-.]{loader_kw}$", "", a_base)
+        b_base = re.sub(rf"[-.]{loader_kw}$", "", b_base)
+
+    if a_base == b_base:
         return True
-    if a in b or b in a:
+
+    # 把 b_base 按 - 切段（保留 . 不切，因为版本号内部用 .）
+    # 检查 a_base 是否等于其中一段
+    b_segments = b_base.split("-")
+    if a_base in b_segments:
         return True
-    # 去掉 "v" 前缀、"mc" 前缀、loader 后缀
-    a_clean = re.sub(r"^(v|mc)", "", a)
-    b_clean = re.sub(r"^(v|mc)", "", b)
-    a_clean = re.sub(r"(forge|fabric|quilt|neoforge)$", "", a_clean)
-    b_clean = re.sub(r"(forge|fabric|quilt|neoforge)$", "", b_clean)
-    if a_clean == b_clean:
-        return True
+
     return False
 
 
@@ -294,15 +350,18 @@ def find_best_match_in_candidates(
     在候选 project 列表中查找最佳匹配。
     返回 (version, file, match_type) 或 (None, None, "")。
 
+    重要：本函数只做精确匹配，不会自动取最新版本。匹配规则：
+
     match_type 取值:
-      "filename_exact"           - 文件名完全匹配
-      "name_and_version"         - slug 含于文件名 + version_number 匹配
-      "name_only"                - slug 含于文件名（无版本号匹配，作为最后兜底）
+      "filename_exact"   - 文件名完全匹配（同一 jar，可能 SHA1 不同）
+      "name_and_version" - slug 含于文件名 + version_number 严格匹配
+                           （找的是用户文件名里写明的那个版本，不会升级到最新）
+
+    如果两种匹配都失败，返回 (None, None, "")，由调用方决定是否记入 missing。
     """
     target_filename = filename.lower()
     target_name = parsed["name"]
     target_version = parsed["version"]
-    target_name_norm = normalize_name(target_name)
 
     # 第一轮：文件名完全匹配
     for cand in candidates:
@@ -319,14 +378,17 @@ def find_best_match_in_candidates(
                     return v, f, "filename_exact"
         time.sleep(0.05)
 
-    # 第二轮：slug 含于文件名 + version_number 匹配
+    # 第二轮：slug 含于文件名 + version_number 严格匹配
+    # 只有当文件名解析出了版本号时才尝试
+    if not target_version:
+        return None, None, ""
+
+    filename_norm = normalize_name(filename)
     for cand in candidates:
         slug = cand.get("slug") or ""
         title = cand.get("title") or ""
         slug_norm = normalize_name(slug)
         title_norm = normalize_name(title)
-        # 检查 slug 或 title 是否含于文件名（归一化后）
-        filename_norm = normalize_name(filename)
         if not slug_norm or not filename_norm:
             continue
         name_in_filename = (slug_norm in filename_norm) or (title_norm in filename_norm)
@@ -339,31 +401,14 @@ def find_best_match_in_candidates(
         for v in versions:
             vnum = v.get("version_number", "") or ""
             if version_matches(target_version, vnum):
+                # 找到匹配的 version，优先取 loader 匹配的 file
                 for f in v.get("files", []):
-                    # 优先取 loader 匹配的文件，否则取第一个
                     fname_lower = (f.get("filename") or "").lower()
                     if parsed["loader"] and parsed["loader"] in fname_lower:
                         return v, f, "name_and_version"
-                # 没找到 loader 匹配，取第一个文件
+                # 没找到 loader 匹配，取该 version 的第一个 file
                 for f in v.get("files", []):
                     return v, f, "name_and_version"
-        time.sleep(0.05)
-
-    # 第三轮：slug 含于文件名（不要求版本号匹配）
-    for cand in candidates:
-        slug = cand.get("slug") or ""
-        slug_norm = normalize_name(slug)
-        filename_norm = normalize_name(filename)
-        if not slug_norm or slug_norm not in filename_norm:
-            continue
-        try:
-            versions = get_project_versions(slug)
-        except Exception:
-            continue
-        if versions:
-            v = versions[0]
-            for f in v.get("files", []):
-                return v, f, "name_only"
         time.sleep(0.05)
 
     return None, None, ""
@@ -588,14 +633,12 @@ def render_missing_table(missing: List[Dict[str, Any]]) -> str:
 
 def reason_summary(reason: str) -> str:
     if reason.startswith("on_modrinth_matched_filename_exact"):
-        return "Modrinth 上有同名 jar，但本地 SHA1 不同 → 已用 Modrinth URL+SHA1 写入 JSON（客户端会下载 Modrinth 版本）"
+        return "Modrinth 上有同名 jar（同 version，但本地 SHA1 不同） → 已用 Modrinth URL+SHA1 写入 JSON（客户端会下载 Modrinth 版本，不会升级到最新）"
     if reason.startswith("on_modrinth_matched_name_and_version"):
-        return "Modrinth 上有此 mod，slug 含于文件名 + 版本号匹配 → 已用 Modrinth URL+SHA1 写入 JSON"
-    if reason.startswith("on_modrinth_matched_name_only"):
-        return "Modrinth 上有此 mod，slug 含于文件名（未匹配版本号，弱匹配） → 已用 Modrinth URL+SHA1 写入 JSON"
+        return "Modrinth 上有此 mod，slug 含于文件名 + 版本号严格匹配 → 已用 Modrinth URL+SHA1 写入 JSON（找的是用户文件名里写明的版本，不会升级到最新）"
     return {
         "not_found_on_modrinth": "Modrinth 上完全没有此 mod（搜索 0 命中）",
-        "project_exists_but_no_matching_file": "Modrinth 上有此 mod 项目，但没有任何 version 的文件名匹配且版本号不匹配",
+        "project_exists_but_no_matching_file": "Modrinth 上有此 mod 项目，但没有 version 的版本号与文件名解析出的版本号匹配（也不会自动取最新版）",
         "on_modrinth_but_different_jar": "Modrinth 上有同名文件，但 SHA1 与本地 jar 不同（旧 reason，新版已被 on_modrinth_matched_filename_exact 替代）",
         "sha1_not_in_version_files": "SHA1 命中了 version 但 files 数组里没有匹配条目（罕见，Modrinth API 数据异常）",
         "no_download_url": "version 响应中匹配的文件条目缺少 url 字段（罕见）",
