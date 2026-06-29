@@ -44,6 +44,10 @@ import java.util.stream.Stream;
  *   <li>若 {@code removeOrphans=true}，删除本地 manifest 中不存在的 .jar（可选备份）</li>
  *   <li>返回 {@link SyncResult}，供平台层提示玩家重启</li>
  * </ol>
+ *
+ * <p>版本检查：通过 manifest 中的 {@code versionId} 与配置文件中记录的
+ * {@code currentVersionId} 对比判断是否需要更新。
+ * 见 {@link #checkVersion()} 和 {@link SyncResult#shouldUpdate}。</p>
  */
 public final class ModSyncer {
 
@@ -55,6 +59,50 @@ public final class ModSyncer {
         this.config = config;
     }
 
+    /**
+     * 仅检查版本，不下载文件。
+     *
+     * <p>用于游戏加载前的"是否需要更新"判断。返回的 {@link CheckResult} 包含
+     * 远端 versionId 和是否需要更新的布尔值。</p>
+     */
+    public CheckResult checkVersion() {
+        if (config.manifestUrl == null || config.manifestUrl.isBlank()) {
+            return CheckResult.error("manifestUrl is not set in config");
+        }
+        ModrinthIndex index;
+        try {
+            String body = HttpUtil.getString(
+                    config.manifestUrl,
+                    config.effectiveHttpTimeoutMs(), 0);
+            index = new Gson().fromJson(JsonParser.parseString(body).getAsJsonObject(), ModrinthIndex.class);
+        } catch (Exception e) {
+            return CheckResult.error("Failed to fetch manifest: " + e.getMessage());
+        }
+        if (index == null) {
+            return CheckResult.error("Manifest was empty or malformed");
+        }
+        String remote = index.versionId == null ? "" : index.versionId;
+        String local = config.currentVersionId == null ? "" : config.currentVersionId;
+        boolean needUpdate;
+        if (local.isEmpty()) {
+            // 首次运行或从未同步过 → 需要更新
+            needUpdate = true;
+            ModLog.info("Version check: no local version recorded, sync required (remote=%s)", remote);
+        } else if (remote.isEmpty()) {
+            // 远端没声明 versionId → 保守地按"需要更新"处理
+            needUpdate = true;
+            ModLog.info("Version check: remote has no versionId, forcing sync (local=%s)", local);
+        } else {
+            needUpdate = !local.equals(remote);
+            ModLog.info("Version check: local=%s remote=%s needUpdate=%s", local, remote, needUpdate);
+        }
+        return new CheckResult(index, remote, local, needUpdate, null);
+    }
+
+    /**
+     * 执行完整同步。同步成功后调用方应把 {@link SyncResult#remoteVersionId}
+     * 回写到配置文件的 {@code currentVersionId} 字段。
+     */
     public SyncResult sync() {
         try {
             Files.createDirectories(modsDir);
@@ -186,7 +234,9 @@ public final class ModSyncer {
 
         boolean changed = actions.stream().anyMatch(a -> a.status != ActionStatus.SKIPPED) || !removed.isEmpty();
         boolean failed = actions.stream().anyMatch(a -> a.status == ActionStatus.FAILED);
-        return new SyncResult(index, actions, removed, changed, failed, null, skippedByFilter, skippedByEnv);
+        String remoteVersion = index.versionId == null ? "" : index.versionId;
+        return new SyncResult(index, actions, removed, changed, failed, null,
+                skippedByFilter, skippedByEnv, remoteVersion);
     }
 
     private SyncAction syncOne(ModrinthFile file, Map<String, Path> existing) {
@@ -318,6 +368,32 @@ public final class ModSyncer {
         }
     }
 
+    /** 版本检查结果（不下载文件）。 */
+    public static final class CheckResult {
+        public final ModrinthIndex manifest;
+        public final String remoteVersionId;
+        public final String localVersionId;
+        public final boolean needUpdate;
+        public final String errorMessage;
+
+        private CheckResult(ModrinthIndex manifest, String remoteVersionId, String localVersionId,
+                            boolean needUpdate, String errorMessage) {
+            this.manifest = manifest;
+            this.remoteVersionId = remoteVersionId;
+            this.localVersionId = localVersionId;
+            this.needUpdate = needUpdate;
+            this.errorMessage = errorMessage;
+        }
+
+        public static CheckResult error(String message) {
+            return new CheckResult(null, "", "", false, message);
+        }
+
+        public boolean fetchFailed() {
+            return errorMessage != null;
+        }
+    }
+
     public static final class SyncResult {
         public final ModrinthIndex manifest;
         public final List<SyncAction> actions;
@@ -327,10 +403,12 @@ public final class ModSyncer {
         public final String errorMessage;
         public final int skippedByFilter;
         public final int skippedByEnv;
+        /** 远端 manifest 的 versionId。同步成功后调用方应将其回写到配置文件。 */
+        public final String remoteVersionId;
 
         private SyncResult(ModrinthIndex manifest, List<SyncAction> actions, List<String> removed,
                            boolean changed, boolean failed, String errorMessage,
-                           int skippedByFilter, int skippedByEnv) {
+                           int skippedByFilter, int skippedByEnv, String remoteVersionId) {
             this.manifest = manifest;
             this.actions = actions;
             this.removedOrphans = removed;
@@ -339,10 +417,11 @@ public final class ModSyncer {
             this.errorMessage = errorMessage;
             this.skippedByFilter = skippedByFilter;
             this.skippedByEnv = skippedByEnv;
+            this.remoteVersionId = remoteVersionId;
         }
 
         public static SyncResult failure(String message) {
-            return new SyncResult(null, new ArrayList<>(), new ArrayList<>(), false, true, message, 0, 0);
+            return new SyncResult(null, new ArrayList<>(), new ArrayList<>(), false, true, message, 0, 0, "");
         }
 
         public int downloadedCount() {

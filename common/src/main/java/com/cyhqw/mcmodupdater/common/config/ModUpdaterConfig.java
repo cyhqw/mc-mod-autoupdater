@@ -22,6 +22,13 @@ public final class ModUpdaterConfig {
     /** 指向 modrinth.index.json 的 URL（HTTP/HTTPS）。必填。 */
     public String manifestUrl = "";
 
+    /**
+     * 上次成功同步的 manifest versionId（由模组自动维护，玩家通常无需手动编辑）。
+     * 启动时模组会拉取远端 manifest，对比 versionId 判断是否需要更新。
+     * 为空表示从未同步过，触发首次同步。
+     */
+    public String currentVersionId = "";
+
     /** 启动时自动同步。 */
     public boolean autoSyncOnLaunch = true;
 
@@ -72,6 +79,7 @@ public final class ModUpdaterConfig {
             return c;
         }
         c.manifestUrl = props.getProperty("manifestUrl", c.manifestUrl);
+        c.currentVersionId = props.getProperty("currentVersionId", c.currentVersionId);
         c.autoSyncOnLaunch = parseBool(props, "autoSyncOnLaunch", c.autoSyncOnLaunch);
         c.periodicSyncMinutes = parseInt(props, "periodicSyncMinutes", c.periodicSyncMinutes);
         c.modsDir = props.getProperty("modsDir", c.modsDir);
@@ -90,6 +98,7 @@ public final class ModUpdaterConfig {
     public void save(Path configPath) throws IOException {
         Properties props = new Properties();
         props.setProperty("manifestUrl", manifestUrl);
+        props.setProperty("currentVersionId", currentVersionId);
         props.setProperty("autoSyncOnLaunch", String.valueOf(autoSyncOnLaunch));
         props.setProperty("periodicSyncMinutes", String.valueOf(periodicSyncMinutes));
         props.setProperty("modsDir", modsDir);

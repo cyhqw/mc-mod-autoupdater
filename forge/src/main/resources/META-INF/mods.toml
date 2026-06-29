@@ -6,12 +6,13 @@ displayTest="IGNORE_ALL_VERSION"
 
 [[mods]]
 modId="mcmodupdater"
-version="0.2.0"
+version="0.3.0"
 displayName="MC Mod Auto-Updater"
 authors="cyhqw"
 description='''
 Client-only mod: fetches a Modrinth modpack index (modrinth.index.json) from a
-URL and syncs the local mods folder at game launch. Supports periodic re-sync.
+URL, shows a Swing dialog before game load, syncs mods if a new version is
+detected via versionId comparison.
 '''
 
 [[dependencies.mcmodupdater]]
