@@ -80,32 +80,39 @@ public final class LaunchSyncRunner {
             return LaunchSyncResult.upToDate(check.remoteVersionId);
         }
 
-        // 3. 需要更新 —— 弹窗告知
-        String localLabel = check.localVersionId.isEmpty() ? "(首次安装)" : check.localVersionId;
-        String intro = String.format(
-                "检测到整合包有新版本。\n\n" +
-                "  整合包名称: %s\n" +
-                "  本地版本:   %s\n" +
-                "  远端版本:   %s\n\n" +
-                "点击 \"确定\" 开始下载更新，完成后需重启游戏。\n" +
-                "点击 \"取消\" 跳过本次更新（使用本地已有模组启动）。",
-                displayName(check.manifest),
-                localLabel,
-                check.remoteVersionId.isEmpty() ? "(未声明)" : check.remoteVersionId);
+        // 3. 需要更新
+        // 首次运行（localVersionId 为空）：静默直接同步，不弹"发现新版本"对话框，
+        // 同步完成后再弹一次结果即可。
+        // 后续运行：先弹"发现新版本 vX → vY"对话框，玩家确认后再同步。
+        boolean firstRun = check.localVersionId.isEmpty();
+        if (!firstRun) {
+            String intro = String.format(
+                    "检测到整合包有新版本。\n\n" +
+                    "  整合包名称: %s\n" +
+                    "  本地版本:   %s\n" +
+                    "  远端版本:   %s\n\n" +
+                    "点击 \"确定\" 开始下载更新，完成后需重启游戏。\n" +
+                    "点击 \"取消\" 跳过本次更新（使用本地已有模组启动）。",
+                    displayName(check.manifest),
+                    check.localVersionId,
+                    check.remoteVersionId.isEmpty() ? "(未声明)" : check.remoteVersionId);
 
-        int choice = showDialog(
-                "MC Mod Auto-Updater — " + modsLabel,
-                intro,
-                JOptionPane.INFORMATION_MESSAGE,
-                JOptionPane.OK_CANCEL_OPTION);
+            int choice = showDialog(
+                    "MC Mod Auto-Updater — " + modsLabel,
+                    intro,
+                    JOptionPane.INFORMATION_MESSAGE,
+                    JOptionPane.OK_CANCEL_OPTION);
 
-        if (choice != JOptionPane.OK_OPTION) {
-            ModLog.info("[LaunchSync] User cancelled update. Continuing with local mods.");
-            return LaunchSyncResult.userCancelled(check.remoteVersionId);
+            if (choice != JOptionPane.OK_OPTION) {
+                ModLog.info("[LaunchSync] User cancelled update. Continuing with local mods.");
+                return LaunchSyncResult.userCancelled(check.remoteVersionId);
+            }
+        } else {
+            ModLog.info("[LaunchSync] First run (no local version). Auto-syncing silently...");
         }
 
         // 4. 执行同步
-        ModLog.info("[LaunchSync] User confirmed. Starting sync...");
+        ModLog.info("[LaunchSync] Starting sync...");
         ModSyncer.SyncResult result = syncer.sync();
 
         // 5. 回写 versionId

@@ -25,26 +25,22 @@
 │   2. 运行本仓库的 scan_mods.py                                       │
 │      → 自动计算每个 jar 的 SHA1/SHA512                               │
 │      → 通过 Modrinth API 反查下载 URL                                │
-│      → 输出 modrinth.index.json（符合 Modrinth 整合包格式）          │
-│      → 未在 Modrinth 上找到的 mod 输出到 missing.txt                 │
-│   3. 上传到任意 HTTP/HTTPS 主机（GitHub Pages、S3、Cloudflare R2...） │
+│      → 输出 modrinth.index.json（含 versionId 字段）                 │
+│   3. 每次更新 mod 后递增 versionId（如 1.0 → 1.1）                    │
+│   4. 上传到任意 HTTP/HTTPS 主机（GitHub Pages、S3、Cloudflare R2...） │
 └─────────────────────────────────────────────────────────────────────┘
                                 │
                                 ▼  HTTPS GET modrinth.index.json
 ┌─────────────────────────────────────────────────────────────────────┐
-│  玩家客户端（安装本模组）                                             │
+│  玩家客户端（游戏加载之前，阻塞执行）                                 │
 │                                                                     │
-│   游戏启动时：                                                       │
-│   1. 从 manifestUrl 拉取 modrinth.index.json                        │
-│   2. 过滤出 path 以 mods/ 开头、env.client=required/optional 的条目  │
-│   3. 对每个条目：                                                    │
-│        - 本地已存在且 SHA1 匹配 → 跳过                              │
-│        - 否则从 downloads URL 列表下载 → 校验 SHA1 → 原子重命名     │
-│        - 覆盖前可选备份为 .bak                                       │
-│   4. 若 removeOrphans=true，删除本地 manifest 中不存在的 .jar       │
-│   5. 在聊天框反馈同步结果；有变化时提示玩家重启                      │
-│                                                                     │
-│   若 periodicSyncMinutes>0，则后台按周期重复同步。                  │
+│   1. 拉取 modrinth.index.json                                       │
+│   2. 对比 manifest.versionId 与本地 currentVersionId                │
+│   3. 版本相同 → 静默继续加载                                         │
+│   4. 首次运行（无 local versionId） → 静默直接同步                   │
+│   5. 发现新版本 → 弹 Swing 对话框，玩家确认后下载                     │
+│   6. 同步完成 → 弹结果对话框，玩家关闭后游戏继续加载                  │
+│   7. 自动回写 currentVersionId 到配置文件                            │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -196,22 +192,25 @@ python scan_mods.py --mods-dir /opt/server/mods --output /var/www/mc/modrinth.in
 ```properties
 manifestUrl=https://your-host.example.com/mc/modrinth.index.json
 autoSyncOnLaunch=true
-periodicSyncMinutes=0
 verifyHash=true
 backupOldMods=true
 ```
 
-重启客户端。模组会：
+重启客户端。模组会在**游戏加载之前**执行以下流程（阻塞，加载屏幕暂停）：
 
 1. 从 `manifestUrl` 拉取 modrinth.index.json
-2. 对每个 mods/ 下的条目：本地已存在且 SHA1 匹配则跳过；否则下载并校验
-3. 可选清理孤儿 jar（`removeOrphans=true` 时）
-4. 在聊天框显示同步摘要
-5. 如有变化，提示重启
+2. 对比 manifest 中的 `versionId` 与本地 `currentVersionId`（自动维护）
+3. **版本相同** → 静默继续加载
+4. **首次运行**（本地无 `currentVersionId`）→ **静默直接同步**，不弹"发现新版本"对话框，同步完成后弹一次结果对话框
+5. **发现新版本** → 弹 Swing 对话框告知"本地 vX → 远端 vY"，玩家点"确定"后下载，点"取消"跳过本次更新
+6. **拉取失败** → 弹警告对话框告知，使用本地模组继续加载
+7. 同步完成后弹"下载 N 个、跳过 N 个、失败 N 个"结果对话框，玩家关闭后游戏才继续加载
+
+> 注意：模组会在配置文件中自动维护 `currentVersionId` 字段，玩家通常无需手动编辑。
 
 ### 5. 后续更新
 
-整合包作者更新 `modrinth.index.json` 后，玩家只需重启游戏（或开启 `periodicSyncMinutes` 让模组自动周期检查）即可同步到最新版本。
+整合包作者更新 modrinth.index.json 时，记得递增 `versionId`（例如 `1.0` → `1.1`）。玩家下次启动游戏时模组会检测到版本变化并弹窗提示更新。
 
 ---
 
