@@ -17,7 +17,8 @@ import java.nio.file.Path;
  *
  * <p>流程：</p>
  * <ol>
- *   <li>若 manifestUrl 未配置 → 静默跳过（首次启动玩家还没填 URL）</li>
+ *   <li>确定 manifest URL：用户在配置文件填了 {@code manifestUrl} 就用用户的，
+ *       否则使用 {@link ModUpdaterConfig#DEFAULT_MANIFEST_URL}（指向本仓库根目录下的 modrinth.index.json）</li>
  *   <li>调用 {@link ModSyncer#checkVersion()} 拉远端 manifest 并对比 versionId</li>
  *   <li>若拉取失败：
  *     <ul>
@@ -46,12 +47,9 @@ public final class LaunchSyncRunner {
      */
     public static LaunchSyncResult runLaunchSync(Path gameDir, Path configPath,
                                                   ModUpdaterConfig config, String modsLabel) {
-        if (config.manifestUrl == null || config.manifestUrl.isBlank()) {
-            ModLog.info("[LaunchSync] manifestUrl not set, skipping launch sync.");
-            return LaunchSyncResult.skipped("manifestUrl not set");
-        }
-
-        ModLog.info("[LaunchSync] Checking manifest version at %s", config.manifestUrl);
+        // manifestUrl 留空时会自动使用 DEFAULT_MANIFEST_URL（指向本仓库根目录下的 modrinth.index.json）
+        String url = config.effectiveManifestUrl();
+        ModLog.info("[LaunchSync] Checking manifest version at %s", url);
 
         // 1. 检查版本
         ModSyncer syncer = new ModSyncer(config.resolveModsDir(gameDir), config);
@@ -138,8 +136,9 @@ public final class LaunchSyncRunner {
             messageType = JOptionPane.WARNING_MESSAGE;
             message = "无法获取整合包清单：\n  " + errorMessage + "\n\n" +
                     "这是首次启动，本地没有已同步的模组。\n" +
-                    "游戏将继续加载，请稍后检查 manifestUrl 配置是否正确。\n" +
-                    "（配置文件位于 config/mcmodupdater/mcmodupdater.properties）";
+                    "游戏将继续加载。\n" +
+                    "当前使用的清单 URL: " + config.effectiveManifestUrl() + "\n" +
+                    "（在 config/mcmodupdater/mcmodupdater.properties 中修改 manifestUrl 可换源）";
         } else {
             messageType = JOptionPane.WARNING_MESSAGE;
             message = "无法获取整合包清单：\n  " + errorMessage + "\n\n" +

@@ -66,13 +66,11 @@ public final class ModSyncer {
      * 远端 versionId 和是否需要更新的布尔值。</p>
      */
     public CheckResult checkVersion() {
-        if (config.manifestUrl == null || config.manifestUrl.isBlank()) {
-            return CheckResult.error("manifestUrl is not set in config");
-        }
+        String url = config.effectiveManifestUrl();
         ModrinthIndex index;
         try {
             String body = HttpUtil.getString(
-                    config.manifestUrl,
+                    url,
                     config.effectiveHttpTimeoutMs(), 0);
             index = new Gson().fromJson(JsonParser.parseString(body).getAsJsonObject(), ModrinthIndex.class);
         } catch (Exception e) {
@@ -110,18 +108,16 @@ public final class ModSyncer {
             return SyncResult.failure("Could not create mods dir: " + e.getMessage());
         }
 
-        if (config.manifestUrl == null || config.manifestUrl.isBlank()) {
-            return SyncResult.failure("manifestUrl is not set in config");
-        }
+        String url = config.effectiveManifestUrl();
 
         ModrinthIndex index;
         try {
             String body = HttpUtil.getString(
-                    config.manifestUrl,
+                    url,
                     config.effectiveHttpTimeoutMs(), 0);
             index = new Gson().fromJson(JsonParser.parseString(body).getAsJsonObject(), ModrinthIndex.class);
         } catch (Exception e) {
-            return SyncResult.failure("Failed to fetch manifest from " + config.manifestUrl + ": " + e.getMessage());
+            return SyncResult.failure("Failed to fetch manifest from " + url + ": " + e.getMessage());
         }
 
         if (index == null || index.files == null) {

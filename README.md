@@ -187,7 +187,11 @@ python scan_mods.py --mods-dir /opt/server/mods --output /var/www/mc/modrinth.in
 
 ### 4. 配置客户端
 
-首次启动时，模组自动创建 `<客户端>/config/mcmodupdater/mcmodupdater.properties`。编辑它：
+首次启动时，模组自动创建 `<客户端>/config/mcmodupdater/mcmodupdater.properties`。
+
+**默认行为**：`manifestUrl` 留空时，模组会自动从本仓库根目录拉取 `modrinth.index.json`（URL：`https://raw.githubusercontent.com/cyhqw/mc-mod-autoupdater/main/modrinth.index.json`）。整合包作者把生成好的 JSON 提交到仓库根目录即可，玩家无需任何配置。
+
+**自定义 URL**：如果你想用别的 URL，编辑配置文件：
 
 ```properties
 manifestUrl=https://your-host.example.com/mc/modrinth.index.json
@@ -265,7 +269,7 @@ backupOldMods=true
 
 | 配置项                       | 默认值     | 说明                                                          |
 | ---------------------------- | ---------- | ------------------------------------------------------------- |
-| `manifestUrl`                | (空)       | **必填。** 指向 modrinth.index.json 的 URL                    |
+| `manifestUrl`                | (空)       | 指向 modrinth.index.json 的 URL；**留空时使用本仓库根目录的默认 URL**：`https://raw.githubusercontent.com/cyhqw/mc-mod-autoupdater/main/modrinth.index.json` |
 | `autoSyncOnLaunch`           | `true`     | 客户端启动时自动同步                                          |
 | `periodicSyncMinutes`        | `0`        | 周期同步间隔（分钟）；`0` 禁用，`>0` 每 N 分钟检查一次        |
 | `modsDir`                    | (空)       | 自定义 mods 目录路径；为空用默认的 `mods/`                    |

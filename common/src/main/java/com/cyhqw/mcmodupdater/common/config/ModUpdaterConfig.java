@@ -19,8 +19,25 @@ import java.util.Set;
  */
 public final class ModUpdaterConfig {
 
-    /** 指向 modrinth.index.json 的 URL（HTTP/HTTPS）。必填。 */
+    /**
+     * 指向 modrinth.index.json 的 URL（HTTP/HTTPS）。
+     * 留空时使用 {@link #DEFAULT_MANIFEST_URL}（指向本仓库根目录下的 modrinth.index.json）。
+     * 玩家可自行填写其它 URL 覆盖默认值。
+     */
     public String manifestUrl = "";
+
+    /**
+     * 默认 manifest URL：指向本仓库根目录下的 modrinth.index.json。
+     * 整合包作者会把生成好的 modrinth.index.json 提交到仓库根目录，
+     * 通过 GitHub raw URL 提供给客户端拉取。
+     */
+    public static final String DEFAULT_MANIFEST_URL =
+            "https://raw.githubusercontent.com/cyhqw/mc-mod-autoupdater/main/modrinth.index.json";
+
+    /** 获取实际使用的 manifest URL（用户未配置时回退到默认）。 */
+    public String effectiveManifestUrl() {
+        return (manifestUrl != null && !manifestUrl.isBlank()) ? manifestUrl : DEFAULT_MANIFEST_URL;
+    }
 
     /**
      * 上次成功同步的 manifest versionId（由模组自动维护，玩家通常无需手动编辑）。

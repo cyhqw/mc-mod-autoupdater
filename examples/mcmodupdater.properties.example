@@ -6,10 +6,12 @@
 # modrinth.index.json，同步本地 mods 目录。
 # =============================================================
 
-# 必填。指向 modrinth.index.json 的 URL（HTTP/HTTPS）。
-# 示例：
+# 指向 modrinth.index.json 的 URL（HTTP/HTTPS）。
+# 留空则使用默认 URL：本仓库根目录下的 modrinth.index.json
+#   https://raw.githubusercontent.com/cyhqw/mc-mod-autoupdater/main/modrinth.index.json
+# 自定义示例：
 #   manifestUrl=https://your-host.example.com/mc/modrinth.index.json
-#   manifestUrl=https://raw.githubusercontent.com/you/your-modpack/main/modrinth.index.json
+#   manifestUrl=https://raw.githubusercontent.com/you/your-repo/main/modrinth.index.json
 manifestUrl=
 
 # 启动时自动同步。
