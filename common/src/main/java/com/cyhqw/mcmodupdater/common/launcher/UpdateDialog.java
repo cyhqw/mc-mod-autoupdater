@@ -107,7 +107,9 @@ public final class UpdateDialog {
     }
 
     private void buildAndShowDialog() {
-        dialog = new JDialog((Frame) null, "MC Mod Auto-Updater — " + modsLabel, true);
+        // 用非 modal dialog，避免 setVisible(true) 阻塞 EDT
+        // 这样 invokeLater 的进度更新能正常工作
+        dialog = new JDialog((Frame) null, "MC Mod Auto-Updater — " + modsLabel, false);
         dialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         dialog.addWindowListener(new WindowAdapter() {
             @Override
@@ -138,19 +140,21 @@ public final class UpdateDialog {
         root.add(vstrut(8));
 
         // 3. 差异摘要
-        int addCount = 0, updateCount = 0, removeCount = 0, keepCount = 0;
+        int addCount = 0, updateCount = 0, removeCount = 0, keepCount = 0, playerOwnedCount = 0;
         for (DiffEntry e : diff.toDownload) {
             if (e.action == DiffAction.ADD) addCount++;
             else if (e.action == DiffAction.UPDATE) updateCount++;
         }
         removeCount = diff.toRemove.size();
         keepCount = diff.toKeep.size();
+        playerOwnedCount = diff.playerOwned.size();
         summaryLabel = new JLabel(String.format(
                 "<html>差异摘要: <font color='#2e7d32'>新增 %d</font> / "
                 + "<font color='#1565c0'>更新 %d</font> / "
                 + "<font color='#c62828'>删除 %d</font> / "
-                + "<font color='#616161'>保留 %d</font></html>",
-                addCount, updateCount, removeCount, keepCount));
+                + "<font color='#616161'>保留 %d</font> / "
+                + "<font color='#9e9e9e'>玩家 mod %d（不受影响）</font></html>",
+                addCount, updateCount, removeCount, keepCount, playerOwnedCount));
         summaryLabel.setAlignmentX(0f);
         root.add(summaryLabel);
         root.add(vstrut(8));
@@ -237,6 +241,9 @@ public final class UpdateDialog {
         dialog.setContentPane(root);
         dialog.pack();
         dialog.setLocationRelativeTo(null);
+        try {
+            dialog.setAlwaysOnTop(true);
+        } catch (Exception ignored) {}
         dialog.setVisible(true);
     }
 
@@ -341,6 +348,7 @@ public final class UpdateDialog {
             rows.addAll(diff.toDownload);
             rows.addAll(diff.toRemove);
             rows.addAll(diff.toKeep);
+            rows.addAll(diff.playerOwned);
         }
 
         @Override
@@ -378,6 +386,7 @@ public final class UpdateDialog {
                 case UPDATE: return "更新";
                 case KEEP: return "保留";
                 case REMOVE: return "删除";
+                case PLAYER_OWNED: return "玩家 mod";
                 default: return a.toString();
             }
         }

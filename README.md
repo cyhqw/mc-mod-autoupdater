@@ -273,8 +273,7 @@ backupOldMods=true
 | `autoSyncOnLaunch`           | `true`     | 客户端启动时自动同步                                          |
 | `periodicSyncMinutes`        | `0`        | 周期同步间隔（分钟）；`0` 禁用，`>0` 每 N 分钟检查一次        |
 | `modsDir`                    | (空)       | 自定义 mods 目录路径；为空用默认的 `mods/`                    |
-| `removeOrphans`              | `false`    | 删除本地 manifest 中不存在的 mod                              |
-| `backupOldMods`              | `true`     | 覆盖 / 删除时先备份为 `.bak`                                  |
+| `backupOldMods`              | `true`     | 覆盖 / 删除 tracked mod 前备份为 `.bak`（玩家自己加的 mod 不会被删除） |
 | `maxConcurrentDownloads`     | `4`        | 并发下载线程数                                                |
 | `verifyHash`                 | `true`     | 下载后校验 SHA1，不匹配则拒绝                                 |
 | `httpTimeoutMs`              | `15000`    | HTTP 请求超时（毫秒）                                         |
@@ -304,7 +303,6 @@ periodicSyncMinutes=30
 
 ```properties
 manifestUrl=https://example.com/mc/modrinth.index.json
-removeOrphans=true
 backupOldMods=true
 ```
 

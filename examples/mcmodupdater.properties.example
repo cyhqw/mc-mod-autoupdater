@@ -27,11 +27,9 @@ periodicSyncMinutes=0
 #   modsDir=/opt/mc-client-mods
 modsDir=
 
-# 删除本地 manifest 中不存在的 mod（"干净安装"模式）。
-# 谨慎开启：仅在你希望客户端严格匹配 manifest 时使用。
-removeOrphans=false
-
-# 覆盖 / 删除前备份为 .bak。
+# 覆盖 tracked mod 前备份为 .bak。
+# 注意：模组只管理自己下载过的 mod（tracked mod），
+# 玩家手动添加的 mod 永远不会被删除或覆盖。
 backupOldMods=true
 
 # 并发下载线程数。

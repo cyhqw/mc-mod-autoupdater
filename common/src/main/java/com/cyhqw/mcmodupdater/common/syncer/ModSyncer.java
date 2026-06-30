@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -31,7 +32,8 @@ import java.util.stream.Stream;
  * 客户端同步逻辑：从 URL 拉取 Modrinth 整合包格式的 modrinth.index.json，
  * 同步本地 mods 目录。
  *
- * <p>支持进度回调（{@link ProgressCallback}），GUI 可实时显示当前下载的 mod 名和进度。</p>
+ * <p><b>Git 式追踪机制</b>：模组只管理"自己下载过的 mod"（tracked mod），
+ * 不会删除玩家手动添加的 mod。</p>
  *
  * <p>同步算法：</p>
  * <ol>
@@ -40,47 +42,38 @@ import java.util.stream.Stream;
  *   <li>应用 skipMods/onlyMods 文件名过滤</li>
  *   <li>对每个条目：
  *     <ul>
- *       <li>本地已存在且 SHA1 匹配 → 跳过</li>
- *       <li>否则下载到 .part，校验 SHA1，原子重命名（支持重试）</li>
- *       <li>覆盖前可选备份为 .bak</li>
+ *       <li>本地已存在且 SHA1 匹配 → 跳过（标记 KEEP）</li>
+ *       <li>否则下载到 .part，校验 SHA1，原子重命名（标记 ADD 或 UPDATE）</li>
  *     </ul>
  *   </li>
- *   <li>若 {@code removeOrphans=true}，删除本地 manifest 中不存在的 .jar（可选备份）</li>
- *   <li>返回 {@link SyncResult}，供平台层提示玩家重启</li>
+ *   <li><b>仅删除 tracked mod 中 manifest 不再包含的</b>（玩家手动加的 mod 永不触碰）</li>
+ *   <li>更新 tracked_mods 列表（新增成功的加入，删除的移除）</li>
  * </ol>
  */
 public final class ModSyncer {
 
     private final Path modsDir;
     private final ModUpdaterConfig config;
+    private final Path trackedModsPath;
+    private final Set<String> trackedMods;
 
-    public ModSyncer(Path modsDir, ModUpdaterConfig config) {
+    public ModSyncer(Path modsDir, ModUpdaterConfig config, Path trackedModsPath) {
         this.modsDir = modsDir;
         this.config = config;
+        this.trackedModsPath = trackedModsPath;
+        this.trackedMods = new LinkedHashSet<>(ModUpdaterConfig.loadTrackedMods(trackedModsPath));
     }
 
     /**
      * 进度回调接口。GUI 实现此接口以实时显示更新进度。
-     * 这是一个 functional interface，可用 lambda 表达式。
      */
     @FunctionalInterface
     public interface ProgressCallback {
-        /**
-         * 一个 mod 处理完成时调用。
-         *
-         * @param current 当前已完成的数量（1-based）
-         * @param total   总数
-         * @param filename 文件名
-         * @param status  状态：DOWNLOADED / SKIPPED / FAILED
-         * @param detail  详情（如失败原因）
-         */
         void onProgress(int current, int total, String filename, ActionStatus status, String detail);
     }
 
     /**
      * 仅检查版本，不下载文件。
-     *
-     * <p>用于游戏加载前的"是否需要更新"判断。</p>
      */
     public CheckResult checkVersion() {
         String url = config.effectiveManifestUrl();
@@ -115,6 +108,14 @@ public final class ModSyncer {
     /**
      * 分析 manifest 与本地 mods 目录的差异，不下载文件。
      * 用于在 GUI 中展示"将要发生什么"。
+     *
+     * <p>差异分类：</p>
+     * <ul>
+     *   <li>ADD: manifest 有但本地没有，将下载</li>
+     *   <li>UPDATE: 本地有但 SHA1 不同，将覆盖</li>
+     *   <li>KEEP: 本地有且 SHA1 相同，跳过</li>
+     *   <li>REMOVE: tracked mod 中 manifest 不再包含的，将删除（玩家手动加的不会被删除）</li>
+     * </ul>
      */
     public DiffResult analyzeDiff(ModrinthIndex index) {
         try {
@@ -139,8 +140,8 @@ public final class ModSyncer {
                     "Could not list mods dir: " + e.getMessage());
         }
 
-        List<DiffEntry> toDownload = new ArrayList<>();   // 新增或更新
-        List<DiffEntry> toKeep = new ArrayList<>();        // 已是最新
+        List<DiffEntry> toDownload = new ArrayList<>();
+        List<DiffEntry> toKeep = new ArrayList<>();
         Set<String> expectedFilenames = new HashSet<>();
         int skippedByFilter = 0;
         int skippedByEnv = 0;
@@ -192,14 +193,26 @@ public final class ModSyncer {
             }
         }
 
-        // 剩下的 existing 是孤儿（本地有但 manifest 没有）
+        // remaining existing 是本地有但 manifest 没有的
+        // 只删除 tracked 的（模组自己下载过的），玩家手动加的不删
         List<DiffEntry> toRemove = new ArrayList<>();
+        List<DiffEntry> playerOwned = new ArrayList<>();  // 玩家手动加的，不删
         for (Map.Entry<String, Path> e : existing.entrySet()) {
-            toRemove.add(new DiffEntry(e.getKey(), DiffAction.REMOVE,
-                    "", "", e.getValue().toFile().length(), 0L, ""));
+            String filenameLower = e.getKey().toLowerCase();
+            if (trackedMods.contains(filenameLower) && !expectedFilenames.contains(e.getKey())) {
+                // tracked 但 manifest 不再有 → 删除
+                toRemove.add(new DiffEntry(e.getKey(), DiffAction.REMOVE,
+                        "", "", e.getValue().toFile().length(), 0L, ""));
+            } else if (!trackedMods.contains(filenameLower)) {
+                // 玩家手动加的 → 不删，记录为 PLAYER_OWNED
+                playerOwned.add(new DiffEntry(e.getKey(), DiffAction.PLAYER_OWNED,
+                        "", "", e.getValue().toFile().length(), 0L, ""));
+            }
         }
 
-        return new DiffResult(toDownload, toKeep, toRemove, new ArrayList<>(), null)
+        ModLog.info("[Diff] tracked=%d, toDownload=%d, toKeep=%d, toRemove=%d, playerOwned=%d",
+                trackedMods.size(), toDownload.size(), toKeep.size(), toRemove.size(), playerOwned.size());
+        return new DiffResult(toDownload, toKeep, toRemove, playerOwned, null)
                 .withSkipped(skippedByFilter, skippedByEnv);
     }
 
@@ -212,7 +225,8 @@ public final class ModSyncer {
 
     /**
      * 执行完整同步，带进度回调。
-     * 同步成功后调用方应把 {@link SyncResult#remoteVersionId} 回写到配置文件。
+     * 同步成功后调用方应把 {@link SyncResult#remoteVersionId} 回写到配置文件，
+     * 并把 {@link SyncResult#newTrackedMods} 保存到 tracked_mods.txt。
      *
      * @param callback 进度回调，可为 null
      */
@@ -224,6 +238,9 @@ public final class ModSyncer {
             return r;
         }
 
+        // 立即回调一次，让 GUI 显示"正在获取清单..."
+        if (callback != null) callback.onProgress(0, 1, "正在获取清单...", ActionStatus.SKIPPED, "");
+
         String url = config.effectiveManifestUrl();
         ModrinthIndex index;
         try {
@@ -232,21 +249,18 @@ public final class ModSyncer {
                     config.effectiveHttpTimeoutMs(), 0);
             index = new Gson().fromJson(JsonParser.parseString(body).getAsJsonObject(), ModrinthIndex.class);
         } catch (Exception e) {
-            SyncResult r = SyncResult.failure("Failed to fetch manifest from " + url + ": " + e.getMessage());
-            return r;
+            return SyncResult.failure("Failed to fetch manifest from " + url + ": " + e.getMessage());
         }
 
         if (index == null || index.files == null) {
-            SyncResult r = SyncResult.failure("Manifest was empty or malformed");
-            return r;
+            return SyncResult.failure("Manifest was empty or malformed");
         }
         ModLog.info("Manifest fetched: %d total file(s), versionId=%s, name=%s",
                 index.files.size(), index.versionId, index.name);
 
         String validationError = validateManifest(index);
         if (validationError != null) {
-            SyncResult r = SyncResult.failure(validationError);
-            return r;
+            return SyncResult.failure(validationError);
         }
 
         Set<String> skip = config.skipModsSet();
@@ -261,8 +275,7 @@ public final class ModSyncer {
                 }
             });
         } catch (IOException e) {
-            SyncResult r = SyncResult.failure("Could not list mods dir: " + e.getMessage());
-            return r;
+            return SyncResult.failure("Could not list mods dir: " + e.getMessage());
         }
 
         // 收集要处理的文件列表
@@ -291,11 +304,11 @@ public final class ModSyncer {
         }
 
         int total = toProcess.size();
+        if (callback != null) callback.onProgress(0, total, "正在准备下载列表...", ActionStatus.SKIPPED, "");
 
         // 多线程并发下载
         Semaphore concurrency = new Semaphore(Math.max(1, config.maxConcurrentDownloads));
         ExecutorService pool = Executors.newFixedThreadPool(Math.max(1, config.maxConcurrentDownloads));
-        // 用 LinkedHashMap 保留顺序，key 是文件名
         Map<String, CompletableFuture<SyncAction>> futuresMap = new LinkedHashMap<>();
         for (ModrinthFile file : toProcess) {
             futuresMap.put(file.fileName(), CompletableFuture.supplyAsync(() -> {
@@ -326,7 +339,6 @@ public final class ModSyncer {
             });
             progressFutures.add(pf);
         }
-        // 等所有进度回调完成
         try {
             CompletableFuture.allOf(progressFutures.toArray(new CompletableFuture[0])).get();
         } catch (Exception e) {
@@ -336,43 +348,68 @@ public final class ModSyncer {
 
         // 收集 actions（按 toProcess 顺序）
         List<SyncAction> actions = new ArrayList<>();
+        Set<String> newTrackedMods = new LinkedHashSet<>();
         for (ModrinthFile file : toProcess) {
             CompletableFuture<SyncAction> f = futuresMap.get(file.fileName());
             try {
-                actions.add(f.get());
+                SyncAction action = f.get();
+                actions.add(action);
+                // 下载成功或已存在的 mod 都加入 tracked
+                if (action.status == ActionStatus.DOWNLOADED || action.status == ActionStatus.SKIPPED) {
+                    newTrackedMods.add(file.fileName().toLowerCase());
+                }
             } catch (Exception e) {
                 actions.add(new SyncAction(file, ActionStatus.FAILED, "future error: " + e.getMessage()));
             }
         }
 
-        // Remove orphans
+        // 删除 tracked mod 中 manifest 不再包含的
+        // 首次同步时 trackedMods 为空，不会删任何东西
         List<String> removed = new ArrayList<>();
-        if (config.removeOrphans) {
-            for (Map.Entry<String, Path> e : existing.entrySet()) {
-                if (!expectedFilenames.contains(e.getKey())) {
-                    try {
-                        if (config.backupOldMods) {
-                            Path bak = e.getValue().resolveSibling(e.getKey() + ".bak");
-                            Files.move(e.getValue(), bak, StandardCopyOption.REPLACE_EXISTING);
-                            ModLog.info("Backed up orphan: %s -> %s", e.getKey(), bak);
-                        } else {
-                            Files.delete(e.getValue());
-                            ModLog.info("Removed orphan: %s", e.getKey());
-                        }
-                        removed.add(e.getKey());
-                    } catch (IOException ex) {
-                        ModLog.warn("Failed to remove orphan %s: %s", e.getKey(), ex.getMessage());
-                    }
+        for (String trackedFilename : trackedMods) {
+            // trackedFilename 是小写的，需要还原大小写查找 existing
+            String actualFilename = null;
+            for (String existingFn : existing.keySet()) {
+                if (existingFn.equalsIgnoreCase(trackedFilename)) {
+                    actualFilename = existingFn;
+                    break;
                 }
             }
+            if (actualFilename == null) continue;  // 本地已没有这个文件
+            if (expectedFilenames.contains(actualFilename)) continue;  // manifest 还有，不删
+
+            // tracked 但 manifest 不再有 → 删除
+            Path target = existing.get(actualFilename);
+            try {
+                if (config.backupOldMods) {
+                    Path bak = target.resolveSibling(actualFilename + ".bak");
+                    Files.move(target, bak, StandardCopyOption.REPLACE_EXISTING);
+                    ModLog.info("Backed up tracked orphan: %s -> %s", actualFilename, bak);
+                } else {
+                    Files.delete(target);
+                    ModLog.info("Removed tracked orphan: %s", actualFilename);
+                }
+                removed.add(actualFilename);
+                // 从 tracked 中移除
+                newTrackedMods.remove(trackedFilename);
+            } catch (IOException ex) {
+                ModLog.warn("Failed to remove tracked orphan %s: %s", actualFilename, ex.getMessage());
+            }
+        }
+
+        // 保存 tracked_mods.txt
+        try {
+            ModUpdaterConfig.saveTrackedMods(trackedModsPath, newTrackedMods);
+            ModLog.info("[Sync] Saved %d tracked mods to %s", newTrackedMods.size(), trackedModsPath);
+        } catch (IOException e) {
+            ModLog.warn("[Sync] Failed to save tracked mods: %s", e.getMessage());
         }
 
         boolean changed = actions.stream().anyMatch(a -> a.status != ActionStatus.SKIPPED) || !removed.isEmpty();
         boolean failed = actions.stream().anyMatch(a -> a.status == ActionStatus.FAILED);
         String remoteVersion = index.versionId == null ? "" : index.versionId;
-        SyncResult result = new SyncResult(index, actions, removed, changed, failed, null,
-                skippedByFilter, skippedByEnv, remoteVersion);
-        return result;
+        return new SyncResult(index, actions, removed, changed, failed, null,
+                skippedByFilter, skippedByEnv, remoteVersion, newTrackedMods);
     }
 
     private SyncAction syncOne(ModrinthFile file, Map<String, Path> existing) {
@@ -483,7 +520,7 @@ public final class ModSyncer {
 
     public enum ActionStatus { SKIPPED, DOWNLOADED, FAILED }
 
-    public enum DiffAction { ADD, UPDATE, KEEP, REMOVE }
+    public enum DiffAction { ADD, UPDATE, KEEP, REMOVE, PLAYER_OWNED }
 
     public static final class SyncAction {
         public final ModrinthFile file;
@@ -497,7 +534,6 @@ public final class ModSyncer {
         }
     }
 
-    /** 差异分析条目。 */
     public static final class DiffEntry {
         public final String filename;
         public final DiffAction action;
@@ -520,23 +556,22 @@ public final class ModSyncer {
         }
     }
 
-    /** 差异分析结果。 */
     public static final class DiffResult {
-        public final List<DiffEntry> toDownload;  // ADD + UPDATE
-        public final List<DiffEntry> toKeep;      // KEEP
-        public final List<DiffEntry> toRemove;    // REMOVE
-        public final List<DiffEntry> skipped;     // filtered
+        public final List<DiffEntry> toDownload;
+        public final List<DiffEntry> toKeep;
+        public final List<DiffEntry> toRemove;
+        public final List<DiffEntry> playerOwned;
         public final String errorMessage;
         public int skippedByFilter;
         public int skippedByEnv;
 
         public DiffResult(List<DiffEntry> toDownload, List<DiffEntry> toKeep,
-                          List<DiffEntry> toRemove, List<DiffEntry> skipped,
+                          List<DiffEntry> toRemove, List<DiffEntry> playerOwned,
                           String errorMessage) {
             this.toDownload = toDownload;
             this.toKeep = toKeep;
             this.toRemove = toRemove;
-            this.skipped = skipped;
+            this.playerOwned = playerOwned;
             this.errorMessage = errorMessage;
         }
 
@@ -548,10 +583,6 @@ public final class ModSyncer {
 
         public boolean hasError() {
             return errorMessage != null;
-        }
-
-        public int totalToProcess() {
-            return toDownload.size() + toKeep.size() + toRemove.size();
         }
     }
 
@@ -590,10 +621,13 @@ public final class ModSyncer {
         public final int skippedByFilter;
         public final int skippedByEnv;
         public final String remoteVersionId;
+        /** 本次同步后的新 tracked mod 列表（调用方应保存到 tracked_mods.txt）。 */
+        public final Set<String> newTrackedMods;
 
         private SyncResult(ModrinthIndex manifest, List<SyncAction> actions, List<String> removed,
                            boolean changed, boolean failed, String errorMessage,
-                           int skippedByFilter, int skippedByEnv, String remoteVersionId) {
+                           int skippedByFilter, int skippedByEnv, String remoteVersionId,
+                           Set<String> newTrackedMods) {
             this.manifest = manifest;
             this.actions = actions;
             this.removedOrphans = removed;
@@ -603,10 +637,12 @@ public final class ModSyncer {
             this.skippedByFilter = skippedByFilter;
             this.skippedByEnv = skippedByEnv;
             this.remoteVersionId = remoteVersionId;
+            this.newTrackedMods = newTrackedMods;
         }
 
         public static SyncResult failure(String message) {
-            return new SyncResult(null, new ArrayList<>(), new ArrayList<>(), false, true, message, 0, 0, "");
+            return new SyncResult(null, new ArrayList<>(), new ArrayList<>(), false, true, message, 0, 0, "",
+                    new LinkedHashSet<>());
         }
 
         public int downloadedCount() {

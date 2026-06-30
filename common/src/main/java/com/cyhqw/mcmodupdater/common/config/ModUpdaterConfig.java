@@ -14,8 +14,9 @@ import java.util.Set;
  * <p>本模组纯客户端运行：从 {@link #manifestUrl} 拉取 Modrinth 整合包格式的
  * modrinth.index.json，同步本地 mods 目录。配置项已尽量精简，只保留玩家真正需要调的项。</p>
  *
- * <p>未在此处暴露的元数据（如游戏版本、加载器）由 manifest 中的 dependencies 块提供，
- * 玩家无需手动配置。</p>
+ * <p><b>Git 式追踪机制</b>：模组只管理"自己下载过的 mod"，不会删除玩家手动添加的 mod。
+ * tracked mod 列表存储在 {@code config/mcmodupdater/tracked_mods.txt}，
+ * 每次 add/update 时追加，remove 时移除。详见 {@link #loadTrackedMods} / {@link #saveTrackedMods}。</p>
  */
 public final class ModUpdaterConfig {
 
@@ -55,10 +56,10 @@ public final class ModUpdaterConfig {
     /** 自定义 mods 目录路径（绝对或相对游戏目录）。为空则用默认的 mods/。 */
     public String modsDir = "";
 
-    /** 删除本地 manifest 中不存在的 mod（"干净安装"模式）。 */
-    public boolean removeOrphans = false;
-
-    /** 覆盖 / 删除前备份为 .bak。 */
+    /**
+     * 覆盖 / 删除前备份为 .bak。
+     * 注意：删除只针对 tracked mod（模组自己下载过的），玩家手动加的 mod 永不删除。
+     */
     public boolean backupOldMods = true;
 
     /** 并发下载线程数。 */
@@ -100,7 +101,6 @@ public final class ModUpdaterConfig {
         c.autoSyncOnLaunch = parseBool(props, "autoSyncOnLaunch", c.autoSyncOnLaunch);
         c.periodicSyncMinutes = parseInt(props, "periodicSyncMinutes", c.periodicSyncMinutes);
         c.modsDir = props.getProperty("modsDir", c.modsDir);
-        c.removeOrphans = parseBool(props, "removeOrphans", c.removeOrphans);
         c.backupOldMods = parseBool(props, "backupOldMods", c.backupOldMods);
         c.maxConcurrentDownloads = parseInt(props, "maxConcurrentDownloads", c.maxConcurrentDownloads);
         c.verifyHash = parseBool(props, "verifyHash", c.verifyHash);
@@ -119,7 +119,6 @@ public final class ModUpdaterConfig {
         props.setProperty("autoSyncOnLaunch", String.valueOf(autoSyncOnLaunch));
         props.setProperty("periodicSyncMinutes", String.valueOf(periodicSyncMinutes));
         props.setProperty("modsDir", modsDir);
-        props.setProperty("removeOrphans", String.valueOf(removeOrphans));
         props.setProperty("backupOldMods", String.valueOf(backupOldMods));
         props.setProperty("maxConcurrentDownloads", String.valueOf(maxConcurrentDownloads));
         props.setProperty("verifyHash", String.valueOf(verifyHash));
@@ -133,6 +132,59 @@ public final class ModUpdaterConfig {
         try (var out = Files.newOutputStream(configPath)) {
             props.store(out, "MC Mod Auto-Updater client configuration");
         }
+    }
+
+    // ------------------------------------------------------------------
+    // tracked_mods.txt 管理（Git 式追踪）
+    // ------------------------------------------------------------------
+
+    /**
+     * 加载 tracked mod 列表。tracked mod 是模组自己下载过的 mod，
+     * 后续同步时只对这些 mod 做 add/update/remove，玩家手动加的 mod 永不触碰。
+     *
+     * @param trackedPath tracked_mods.txt 路径（位于 config/mcmodupdater/ 下）
+     * @return 文件名集合（小写），空集表示从未同步过
+     */
+    public static Set<String> loadTrackedMods(Path trackedPath) {
+        if (!Files.exists(trackedPath)) {
+            return Collections.emptySet();
+        }
+        Set<String> set = new LinkedHashSet<>();
+        try {
+            for (String line : Files.readAllLines(trackedPath)) {
+                String v = line.trim().toLowerCase();
+                if (!v.isEmpty() && !v.startsWith("#")) {
+                    set.add(v);
+                }
+            }
+        } catch (IOException e) {
+            return Collections.emptySet();
+        }
+        return set;
+    }
+
+    /**
+     * 保存 tracked mod 列表。会覆盖整个文件。
+     *
+     * @param trackedPath tracked_mods.txt 路径
+     * @param trackedMods 文件名集合（会被转为小写）
+     */
+    public static void saveTrackedMods(Path trackedPath, Set<String> trackedMods) throws IOException {
+        Files.createDirectories(trackedPath.getParent());
+        Set<String> sorted = new LinkedHashSet<>();
+        for (String m : trackedMods) {
+            String v = m.trim().toLowerCase();
+            if (!v.isEmpty()) sorted.add(v);
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("# MC Mod Auto-Updater — tracked mods list\n");
+        sb.append("# 这个文件记录了模组自己下载/管理过的 mod 文件名。\n");
+        sb.append("# 后续同步时只对这些 mod 做 add/update/remove，\n");
+        sb.append("# 玩家手动添加的 mod 永不删除。请勿手动编辑。\n\n");
+        for (String m : sorted) {
+            sb.append(m).append("\n");
+        }
+        Files.writeString(trackedPath, sb.toString());
     }
 
     // ------------------------------------------------------------------

@@ -56,7 +56,8 @@ public final class LaunchSyncRunner {
         String url = config.effectiveManifestUrl();
         ModLog.info("[LaunchSync] Checking manifest version at %s", url);
 
-        ModSyncer syncer = new ModSyncer(config.resolveModsDir(gameDir), config);
+        Path trackedModsPath = configPath.resolveSibling("tracked_mods.txt");
+        ModSyncer syncer = new ModSyncer(config.resolveModsDir(gameDir), config, trackedModsPath);
         ModSyncer.CheckResult check;
         try {
             check = syncer.checkVersion();
@@ -225,18 +226,23 @@ public final class LaunchSyncRunner {
                                                      String errorMessage, String modsLabel) {
         ModLog.warn("[LaunchSync] Failed to fetch manifest: %s", errorMessage);
         boolean firstRun = config.currentVersionId == null || config.currentVersionId.isEmpty();
-        SimpleDialog.show(
-                "MC Mod Auto-Updater — " + modsLabel,
-                (firstRun
-                        ? "无法获取整合包清单：\n  " + errorMessage + "\n\n"
-                          + "这是首次启动，本地没有已同步的模组。\n"
-                          + "游戏将继续加载。\n"
-                          + "当前使用的清单 URL: " + config.effectiveManifestUrl() + "\n"
-                          + "（在 config/mcmodupdater/mcmodupdater.properties 中修改 manifestUrl 可换源）"
-                        : "无法获取整合包清单：\n  " + errorMessage + "\n\n"
-                          + "本地已有版本 " + config.currentVersionId + " 的模组，"
-                          + "游戏将继续使用本地模组加载。"),
-                javax.swing.JOptionPane.WARNING_MESSAGE);
+        String message = (firstRun
+                ? "无法获取整合包清单：\n  " + errorMessage + "\n\n"
+                  + "这是首次启动，本地没有已同步的模组。\n"
+                  + "游戏将继续加载。\n"
+                  + "当前使用的清单 URL: " + config.effectiveManifestUrl() + "\n"
+                  + "（在 config/mcmodupdater/mcmodupdater.properties 中修改 manifestUrl 可换源）"
+                : "无法获取整合包清单：\n  " + errorMessage + "\n\n"
+                  + "本地已有版本 " + config.currentVersionId + " 的模组，"
+                  + "游戏将继续使用本地模组加载。");
+        try {
+            SimpleDialog.show(
+                    "MC Mod Auto-Updater — " + modsLabel,
+                    message,
+                    javax.swing.JOptionPane.WARNING_MESSAGE);
+        } catch (Throwable t) {
+            ModLog.warn("[LaunchSync] SimpleDialog failed (likely headless): %s", t.getMessage());
+        }
         return LaunchSyncResult.fetchFailed(errorMessage, firstRun);
     }
 
