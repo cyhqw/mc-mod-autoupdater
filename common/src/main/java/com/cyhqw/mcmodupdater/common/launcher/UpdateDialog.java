@@ -302,7 +302,7 @@ public final class UpdateDialog {
                 currentFileLabel.setText(String.format(
                         "完成: 下载 %d, 跳过 %d, 失败 %d",
                         result.downloadedCount(), result.skippedCount(), result.failedCount()));
-                logArea.append(String.format("\n=== 同步完成 ===\n下载: %d\n跳过: %d\n失败: %d\n删除孤儿: %d\n",
+                logArea.append(String.format("\n=== 同步完成 ===\n下载: %d\n跳过: %d\n失败: %d\n删除: %d\n",
                         result.downloadedCount(), result.skippedCount(), result.failedCount(),
                         result.removedOrphans.size()));
                 if (result.changed) {
