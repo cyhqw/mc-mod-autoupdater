@@ -45,6 +45,14 @@ public final class LaunchSyncRunner {
      */
     public static LaunchSyncResult runLaunchSync(Path gameDir, Path configPath,
                                                   ModUpdaterConfig config, String modsLabel) {
+        // Minecraft Forge/Fabric 在 modloading 阶段会把 AWT 设为 headless 模式，
+        // 导致 Swing 弹窗抛 HeadlessException。
+        // 强制解除 headless，让 Swing 能正常工作。
+        boolean swingReady = forceEnableAwt();
+        if (!swingReady) {
+            ModLog.warn("[LaunchSync] Swing is not available (headless). Falling back to log-only mode.");
+        }
+
         String url = config.effectiveManifestUrl();
         ModLog.info("[LaunchSync] Checking manifest version at %s", url);
 
@@ -89,6 +97,26 @@ public final class LaunchSyncRunner {
         // 弹窗询问 + 进度
         String modpackName = (check.manifest != null && check.manifest.name != null && !check.manifest.name.isBlank())
                 ? check.manifest.name : "(未命名整合包)";
+
+        if (!swingReady) {
+            // Swing 不可用，回退到日志模式：直接同步，不弹窗
+            ModLog.warn("[LaunchSync] Swing not available, auto-syncing without dialog (firstRun=%s)",
+                    check.localVersionId.isEmpty());
+            ModLog.info("[LaunchSync] Diff: %d to download, %d to keep, %d to remove",
+                    diff.toDownload.size(), diff.toKeep.size(), diff.toRemove.size());
+            for (ModSyncer.DiffEntry e : diff.toDownload) {
+                ModLog.info("[LaunchSync]   %s: %s", e.action, e.filename);
+            }
+            ModSyncer.SyncResult result = syncer.sync(null);
+            if (!result.failed && !result.remoteVersionId.isEmpty()) {
+                config.currentVersionId = result.remoteVersionId;
+                saveConfigQuietly(configPath, config);
+            }
+            ModLog.info("[LaunchSync] Sync done: %d downloaded, %d skipped, %d failed",
+                    result.downloadedCount(), result.skippedCount(), result.failedCount());
+            return LaunchSyncResult.synced(result);
+        }
+
         UpdateDialog dialog = new UpdateDialog(
                 modsLabel, modpackName,
                 check.localVersionId.isEmpty() ? "(首次安装)" : check.localVersionId,
@@ -99,8 +127,14 @@ public final class LaunchSyncRunner {
         try {
             confirmed = dialog.showAndAwaitConfirm();
         } catch (Exception e) {
-            ModLog.error("[LaunchSync] Dialog failed", e);
-            return LaunchSyncResult.userCancelled(check.remoteVersionId);
+            ModLog.error("[LaunchSync] Dialog failed, falling back to auto-sync", e);
+            // 弹窗失败，回退到自动同步（不阻塞）
+            ModSyncer.SyncResult result = syncer.sync(null);
+            if (!result.failed && !result.remoteVersionId.isEmpty()) {
+                config.currentVersionId = result.remoteVersionId;
+                saveConfigQuietly(configPath, config);
+            }
+            return LaunchSyncResult.synced(result);
         }
 
         if (!confirmed) {
@@ -126,6 +160,65 @@ public final class LaunchSyncRunner {
         dialog.dispose();
 
         return LaunchSyncResult.synced(result);
+    }
+
+    /**
+     * 强制解除 AWT headless 模式。
+     * Minecraft 在 modloading 阶段会设 java.awt.headless=true，
+     * 这里通过反射重置 Toolkit 和 GraphicsEnvironment 的缓存字段。
+     *
+     * @return true 如果 Swing 可用（headless 已解除）
+     */
+    private static boolean forceEnableAwt() {
+        try {
+            // 1. 设置系统属性
+            System.setProperty("java.awt.headless", "false");
+
+            // 2. 反射重置 Toolkit.toolkit 缓存字段（Java 17/21 中字段名是 "toolkit"）
+            try {
+                Class<?> tkClass = Class.forName("java.awt.Toolkit");
+                java.lang.reflect.Field f = tkClass.getDeclaredField("toolkit");
+                f.setAccessible(true);
+                f.set(null, null);
+            } catch (NoSuchFieldException nsfe) {
+                // 尝试其它可能的名字
+                try {
+                    Class<?> tkClass = Class.forName("java.awt.Toolkit");
+                    java.lang.reflect.Field f = tkClass.getDeclaredField("defaultToolkit");
+                    f.setAccessible(true);
+                    f.set(null, null);
+                } catch (Exception ignored) {}
+            } catch (Exception ignored) {}
+
+            // 3. 反射重置 GraphicsEnvironment.headless 和 defaultHeadless 缓存字段
+            try {
+                Class<?> geClass = Class.forName("java.awt.GraphicsEnvironment");
+                try {
+                    java.lang.reflect.Field f = geClass.getDeclaredField("headless");
+                    f.setAccessible(true);
+                    f.set(null, Boolean.FALSE);
+                } catch (NoSuchFieldException ignored) {}
+                try {
+                    java.lang.reflect.Field f = geClass.getDeclaredField("defaultHeadless");
+                    f.setAccessible(true);
+                    f.set(null, Boolean.FALSE);
+                } catch (NoSuchFieldException ignored) {}
+            } catch (Exception ignored) {}
+
+            // 4. 验证：尝试创建 GraphicsEnvironment
+            java.awt.GraphicsEnvironment ge = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment();
+            boolean headless = ge.isHeadless();
+            ModLog.info("[LaunchSync] AWT headless=%s, ge=%s", headless, ge.getClass().getSimpleName());
+            if (headless) {
+                // headless 仍为 true，反射没生效
+                ModLog.warn("[LaunchSync] headless still true after reflection. Swing dialogs will fail.");
+                return false;
+            }
+            return true;
+        } catch (Throwable t) {
+            ModLog.warn("[LaunchSync] forceEnableAwt failed: %s", t.getMessage());
+            return false;
+        }
     }
 
     private static LaunchSyncResult handleFetchError(ModUpdaterConfig config, Path configPath,
