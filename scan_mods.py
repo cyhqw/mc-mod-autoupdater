@@ -10,32 +10,27 @@ scan_mods.py — 扫描 mods/ 目录，生成符合 Modrinth 整合包格式的 
   python scan_mods.py --include-disabled
   python scan_mods.py --interactive            # 交互式 CLI
   python scan_mods.py --threads 8              # 多线程并行（默认 4）
+  python scan_mods.py --no-curseforge          # 禁用 CurseForge 回退（默认启用）
 
 要求: Python 3.8+ 标准库（无需 pip install）
 
-工作流程:
+工作流程 (Modrinth 优先, CurseForge 兜底, 都默认启用):
   1. 扫描 --mods-dir 下的所有 .jar 文件（默认递归子目录）
   2. 对每个 jar 计算 SHA1 和 SHA512
   3. 多线程并行处理每个 jar:
-     a) 通过 Modrinth API 用 SHA1 反查 version_file
-     b) 若 SHA1 反查失败，回退到按文件名搜索:
-        - 从文件名提取关键词，尝试多个查询变体（去空格、加连字符、原始名）
-        - 调 /search API 找候选 project
-        - 遍历候选 project 的 version 列表:
-          * filename 完全匹配 → 用 Modrinth URL+SHA1 (reason=on_modrinth_different_jar_same_filename)
-          * slug 含于文件名 + version_number 匹配 → 用 Modrinth URL+SHA1 (reason=on_modrinth_matched_by_name_and_version)
-          * 找到 project 但无任何匹配 → missing (reason=project_exists_but_no_matching_file)
-          * 完全没找到 → missing (reason=not_found_on_modrinth)
+     a) Modrinth: SHA1 反查 /version_file/{sha1}
+     b) Modrinth 文件名搜索回退 (slug + version_number 严格匹配)
+     c) CurseForge 回退 (默认启用):
+        - 用 mod 名变体调 CF /mods/search?slug=... 精确搜索
+        - 找到 modId 后调 /mods/{modId}/files 按文件名匹配
+        - 用户文件名带 [中文标注] 前缀时自动去前缀重试
+     d) 都没找到 → 记入 missing.txt
   4. 写入 modrinth.index.json
-  5. 未在 Modrinth 上找到的 mod 写入 missing.txt
-
-注意：当 SHA1 不符但名称+版本号对上时，使用 Modrinth 上的 URL 和 SHA1 写入 JSON。
-客户端会下载 Modrinth 版本（与本地 jar 内容可能略有差异，但功能等价）。
 
 退出码:
   0 — 全部成功
   1 — 严重错误（mods 目录不存在等）
-  2 — 部分文件未在 Modrinth 上找到（但 modrinth.index.json 已生成）
+  2 — 部分文件未找到（但 modrinth.index.json 已生成）
 """
 
 from __future__ import annotations
@@ -1416,11 +1411,11 @@ def interactive_cli() -> int:
         "版本号不匹配时自动取 Modrinth 最新版? (y/N, 开启会导致客户端下载与本地不同版本): ",
         default=False)
     enable_curseforge = yes_no(
-        "启用 CurseForge 回退? (y/N, Modrinth 找不到时尝试 CF, 需要 cf-modids.txt 映射文件): ",
-        default=False)
+        "启用 CurseForge 回退? (Y/n, 默认启用; Modrinth 找不到时尝试 CF): ",
+        default=True)
     cf_modids_file = "cf-modids.txt"
     if enable_curseforge:
-        cf_modids_file = prompt("cf-modids 文件路径 (回车=cf-modids.txt): ", "cf-modids.txt").strip() or "cf-modids.txt"
+        cf_modids_file = prompt("cf-modids 文件路径 (回车=cf-modids.txt, 可选; 留空则自动用 CF search): ", "cf-modids.txt").strip() or "cf-modids.txt"
     print()
 
     # 6. 线程数
@@ -1575,12 +1570,17 @@ def main() -> int:
     )
     parser.add_argument(
         "--curseforge", dest="enable_curseforge",
-        action="store_true", default=False,
-        help="启用 CurseForge 回退（Modrinth 找不到时尝试 CurseForge，需要 cf-modids.txt 提供 slug→modId 映射）",
+        action="store_true", default=True,
+        help="启用 CurseForge 回退（默认启用；Modrinth 找不到时尝试 CurseForge，已预置 API key）",
+    )
+    parser.add_argument(
+        "--no-curseforge", dest="enable_curseforge",
+        action="store_false",
+        help="禁用 CurseForge 回退（只查 Modrinth，更快但覆盖率低）",
     )
     parser.add_argument(
         "--cf-modids-file", dest="cf_modids_file", default="cf-modids.txt",
-        help="CurseForge slug→modId 映射文件路径（默认: cf-modids.txt）",
+        help="CurseForge slug→modId 映射文件路径（可选；未提供时脚本自动用 CF search API 查找）",
     )
     parser.add_argument(
         "--threads", "-t", type=int, default=4,

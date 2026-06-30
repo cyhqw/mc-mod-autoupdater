@@ -331,7 +331,8 @@ backupOldMods=true
 | `--no-recursive`          | (flag)                  | 不递归子目录，仅扫描 `--mods-dir` 顶层                          |
 | `--no-fallback-search`    | (flag)                  | SHA1 反查失败时不启用 Modrinth 文件名搜索回退（更快，但 reason 更笼统） |
 | `--allow-version-fallback`| (flag)                  | Modrinth 文件名搜索也无版本号匹配时，自动取 Modrinth 最新版（会升级版本，谨慎开启） |
-| `--curseforge`            | (flag)                  | **启用 CurseForge 回退**：Modrinth 找不到时自动查 CF（已预置 API key） |
+| `--curseforge`            | (flag, 默认启用)        | **CurseForge 回退**（默认启用；Modrinth 找不到时尝试 CF，已预置 API key） |
+| `--no-curseforge`         | (flag)                  | 禁用 CurseForge 回退（只查 Modrinth，更快但覆盖率低） |
 | `--cf-modids-file`        | `cf-modids.txt`         | CF slug→modId 映射文件（可选，未提供时脚本会自动用 CF search API 查找） |
 | `--threads`, `-t`         | `4`                     | 并发线程数                                                      |
 | `--missing-output`        | `missing.txt`           | 未找到 mod 列表的输出文件；留空则不写                           |
@@ -347,9 +348,9 @@ backupOldMods=true
 | `1`    | 严重错误（mods 目录不存在、JSON 写入失败等）                      |
 | `2`    | 部分文件未找到，`modrinth.index.json` 仍已生成                    |
 
-### CurseForge 回退说明
+### CurseForge 回退说明（默认启用）
 
-开启 `--curseforge` 后，当 Modrinth 找不到某个 mod 时（SHA1 不匹配、版本不同、CF 独占），脚本会自动：
+脚本**默认启用** CurseForge 回退，无需任何参数。当 Modrinth 找不到某个 mod 时（SHA1 不匹配、版本不同、CF 独占），脚本会自动：
 
 1. 用 mod 名变体作为 slug 调 CurseForge `/mods/search?slug=...` 精确搜索
 2. slug 搜索失败 → 用 mod 名作为 searchFilter 模糊搜索
@@ -394,10 +395,11 @@ my-private-mod.jar   a1b2c3d4...   mods/my-private-mod.jar   not_found_on_modrin
          * filename 完全匹配 → 用 Modrinth URL+SHA1
          * slug 含于文件名 + version_number 严格匹配 → 用 Modrinth URL+SHA1
          * (可选) version_fallback_to_latest → 用 Modrinth 最新版
-  4. CurseForge 回退 (仅当 --curseforge):
+  4. CurseForge 回退 (默认启用, 可用 --no-curseforge 禁用):
        - 用 mod 名变体调 CF /mods/search?slug=... 精确搜索
        - 找到 modId 后调 /mods/{modId}/files?gameVersion=1.20.1&modLoaderType=1
        - 找文件名完全匹配的 file → 用 CF URL+SHA1
+       - 用户文件名带 [中文标注] 前缀时自动去前缀重试
   5. 都没找到 → 记入 missing.txt
 ```
 
