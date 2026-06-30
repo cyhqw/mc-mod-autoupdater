@@ -54,7 +54,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 MODRINTH_API = "https://api.modrinth.com/v2"
-USER_AGENT = "mc-mod-autoupdater-scanner/0.4.0 (https://github.com/cyhqw/mc-mod-autoupdater)"
+CURSEFORGE_API = "https://api.curseforge.com/v1"
+# CurseForge API key — 用户可在环境变量 CURSEFORGE_API_KEY 中覆盖
+DEFAULT_CURSEFORGE_API_KEY = "$2a$10$0N4gkNXNyKbt42tGVLeSI.B.WZXK5c8bZhHalbH54LT9UAskU03LK"
+USER_AGENT = "mc-mod-autoupdater-scanner/0.5.0 (https://github.com/cyhqw/mc-mod-autoupdater)"
 HTTP_TIMEOUT = 20  # seconds
 MAX_RETRIES = 2
 
@@ -147,6 +150,206 @@ def get_project_versions(slug_or_id: str, game_version: Optional[str] = None) ->
     if data is None:
         return []
     return data or []
+
+
+# ---------------------------------------------------------------------------
+# CurseForge helpers
+# ---------------------------------------------------------------------------
+
+def get_cf_api_key() -> str:
+    """获取 CurseForge API key：优先环境变量，其次默认值。"""
+    import os
+    return os.environ.get("CURSEFORGE_API_KEY", DEFAULT_CURSEFORGE_API_KEY)
+
+
+def cf_http_get_json(url: str, timeout: int = HTTP_TIMEOUT) -> Optional[Dict[str, Any]]:
+    """CurseForge API GET，自动带 x-api-key 头。"""
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json",
+            "x-api-key": get_cf_api_key(),
+        },
+    )
+    last_err: Optional[Exception] = None
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                body = resp.read().decode("utf-8")
+                return json.loads(body)
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+            last_err = e
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            last_err = e
+        if attempt < MAX_RETRIES:
+            time.sleep(0.5 * (2 ** attempt))
+    raise RuntimeError(f"CF HTTP GET {url} failed: {last_err}")
+
+
+def cf_get_mod_files(mod_id: int, game_version: str = "", mod_loader_type: int = 0) -> List[Dict[str, Any]]:
+    """
+    获取 CurseForge mod 的文件列表。
+
+    mod_loader_type: 1=Forge, 4=Fabric, 5=Quilt, 6=NeoForge
+    """
+    url = f"{CURSEFORGE_API}/mods/{mod_id}/files"
+    params = []
+    if game_version:
+        params.append(f"gameVersion={urllib.parse.quote(game_version)}")
+    if mod_loader_type:
+        params.append(f"modLoaderType={mod_loader_type}")
+    if params:
+        url += "?" + "&".join(params)
+    data = cf_http_get_json(url)
+    if data is None:
+        return []
+    return data.get("data", []) or []
+
+
+def cf_get_file_detail(file_id: int) -> Optional[Dict[str, Any]]:
+    """获取 CurseForge file 详情（含 sha1/md5）。"""
+    url = f"{CURSEFORGE_API}/mods/files"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps({"fileIds": [file_id]}).encode(),
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "x-api-key": get_cf_api_key(),
+        },
+    )
+    last_err: Optional[Exception] = None
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+                body = resp.read().decode("utf-8")
+                data = json.loads(body)
+            files = data.get("data", []) or []
+            return files[0] if files else None
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+            last_err = e
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            last_err = e
+        if attempt < MAX_RETRIES:
+            time.sleep(0.5 * (2 ** attempt))
+    raise RuntimeError(f"CF file detail failed: {last_err}")
+
+
+def cf_loader_type(loader: str) -> int:
+    """把 loader 字符串转成 CF modLoaderType 数字。"""
+    return {
+        "forge": 1,
+        "fabric": 4,
+        "quilt": 5,
+        "neoforge": 6,
+    }.get(loader.lower(), 0)
+
+
+def load_cf_modids(path: Path) -> Dict[str, int]:
+    """
+    加载 CurseForge slug → modId 映射文件。
+    文件格式（每行一条）：
+        # 注释行
+        waystones=245755
+        placebo=273510
+        voicechat=416089  # Simple Voice Chat
+    slug 不区分大小写，返回时统一小写。
+    """
+    mapping: Dict[str, int] = {}
+    if not path.exists():
+        return mapping
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        slug, modid_str = line.split("=", 1)
+        slug = slug.strip().lower()
+        modid_str = modid_str.strip().split("#")[0].strip()
+        try:
+            modid = int(modid_str)
+            mapping[slug] = modid
+        except ValueError:
+            continue
+    return mapping
+
+
+def find_cf_file_by_filename(
+    mod_id: int,
+    target_filename: str,
+    game_version: str,
+    loader: str,
+) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """
+    在 CurseForge mod 的 files 列表中找到文件名完全匹配的 file。
+    返回 (file_entry, file_detail) 或 (None, None)。
+
+    file_entry 来自 /mods/{modId}/files，已含 downloadUrl 和 fileName
+    file_detail 来自 POST /mods/files，含 sha1 和 md5（如果需要更精确的 hash 可查这个）
+    """
+    loader_type = cf_loader_type(loader) if loader else 0
+    files = cf_get_mod_files(mod_id, game_version, loader_type)
+    if not files and loader_type:
+        # loader 过滤后没文件，尝试不限定 loader
+        files = cf_get_mod_files(mod_id, game_version, 0)
+
+    target_lower = target_filename.lower()
+    for f in files:
+        fname = (f.get("fileName") or "").lower()
+        if fname == target_lower:
+            # file_entry 已包含 downloadUrl，但 sha1 在 hashes 字段
+            # 直接用 file_entry 即可，避免额外 API 调用
+            return f, f
+    return None, None
+
+
+def find_cf_file_by_sha1(
+    mod_id: int,
+    target_sha1: str,
+    game_version: str,
+    loader: str,
+) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """
+    在 CurseForge mod 的 files 列表中找到 sha1 匹配的 file。
+    CF 的 files 列表响应里 hashes 字段可能为空，需要逐个调 /mods/files 查 sha1。
+    为节省 API 调用，优先按文件名匹配（见 find_cf_file_by_filename）。
+    """
+    loader_type = cf_loader_type(loader) if loader else 0
+    files = cf_get_mod_files(mod_id, game_version, loader_type)
+    if not files and loader_type:
+        files = cf_get_mod_files(mod_id, game_version, 0)
+
+    for f in files:
+        # 先看 file_entry 自带的 hashes 字段
+        hashes = f.get("hashes") or []
+        for h in hashes:
+            if h.get("algo") == 1 and (h.get("value") or "").lower() == target_sha1.lower():
+                return f, f
+
+    # file_entry 没 sha1，逐个查 file_detail（开销大）
+    for f in files[:5]:  # 只查前 5 个，避免过多 API 调用
+        file_id = f.get("id")
+        if not file_id:
+            continue
+        try:
+            detail = cf_get_file_detail(file_id)
+        except Exception:
+            continue
+        if detail:
+            hashes = detail.get("hashes") or []
+            for h in hashes:
+                if h.get("algo") == 1 and (h.get("value") or "").lower() == target_sha1.lower():
+                    return f, detail
+        time.sleep(0.05)
+
+    return None, None
 
 
 def find_file_in_version(version: Dict[str, Any], sha1_hash: str) -> Optional[Dict[str, Any]]:
@@ -563,25 +766,20 @@ def build_file_entry(
     game_version: str,
     enable_fallback_search: bool,
     allow_version_fallback: bool = False,
+    cf_modids: Optional[Dict[str, int]] = None,
+    enable_curseforge: bool = False,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
     """
-    为单个 jar 构建 Modrinth file 条目。
+    为单个 jar 构建 manifest file 条目。
     返回 (entry, missing_info)。
 
     策略:
       1. SHA1 反查 Modrinth version_file → 命中即用
-      2. 文件名搜索回退:
-         a) 文件名完全匹配 → 用 Modrinth URL+SHA1 (match_type=filename_exact,
-            但本地 SHA1 不同，所以 reason 标记 on_modrinth_different_jar_same_filename)
-         b) slug 含于文件名 + version_number 匹配 → 用 Modrinth URL+SHA1
-            (match_type=name_and_version)
-         c) slug 含于文件名（不要求版本号匹配） → 用 Modrinth URL+SHA1
-            (match_type=name_only，更弱的匹配，可能误判)
-         d) 找到 project 但无任何匹配 → missing (reason=project_exists_but_no_matching_file)
-         e) 完全没找到 → missing (reason=not_found_on_modrinth)
-
-    注意: 当走 fallback 路径(b/c)时，写入 JSON 的是 Modrinth 上的 SHA1，
-    客户端会下载 Modrinth 版本（本地 jar 与 Modrinth 上的可能略有差异，但功能等价）。
+      2. Modrinth 文件名搜索回退 (filename_exact / name_and_version / version_fallback_to_latest)
+      3. CurseForge 回退 (仅当 enable_curseforge=True 且 cf_modids 提供了 slug→modId 映射):
+         a) 按 slug 查 CF /mods/{modId}/files，找文件名完全匹配 → 用 CF URL+SHA1
+         b) 找不到文件名匹配 → missing (reason=on_curseforge_but_no_matching_file)
+      4. 完全未找到 → missing (reason=not_found_on_modrinth_or_curseforge)
     """
     try:
         rel = jar.relative_to(mods_dir.parent)
@@ -687,18 +885,109 @@ def build_file_entry(
 
             # 没找到任何匹配，但项目存在
             top = candidates[0]
-            return None, {
+            # 不直接 return，留给后续 CurseForge 回退处理
+            modrinth_miss = {
                 "filename": jar.name, "path": path_str, "sha1": sha1_hash, "size": size,
                 "reason": "project_exists_but_no_matching_file",
                 "modrinth_project_slug": top.get("slug"),
                 "modrinth_project_id": top.get("project_id"),
                 "modrinth_project_title": top.get("title"),
             }
+        else:
+            modrinth_miss = None
+    else:
+        modrinth_miss = None
 
-    # 3. 完全未找到
+    # 3. CurseForge 回退（仅当启用且 cf_modids 提供了 slug→modId 映射）
+    if enable_curseforge and cf_modids:
+        parsed = parse_filename(jar.name)
+        # 尝试用 mod_name 的多个变体匹配 cf_modids 中的 slug
+        cf_mod_id = None
+        for variant in parsed["name_variants"]:
+            v_lower = variant.lower()
+            if v_lower in cf_modids:
+                cf_mod_id = cf_modids[v_lower]
+                break
+            # 试去掉 - 跟 _ 互换
+            v_alt = v_lower.replace("-", "_")
+            if v_alt in cf_modids:
+                cf_mod_id = cf_modids[v_alt]
+                break
+            v_alt = v_lower.replace("_", "-")
+            if v_alt in cf_modids:
+                cf_mod_id = cf_modids[v_alt]
+                break
+
+        if cf_mod_id is not None:
+            try:
+                cf_file, cf_detail = find_cf_file_by_filename(
+                    cf_mod_id, jar.name, game_version, parsed["loader"])
+            except Exception as e:
+                cf_file = None
+                sys.stderr.write(f"[WARN] CF lookup failed for modId={cf_mod_id}: {e}\n")
+
+            if cf_file is not None:
+                download_url = cf_file.get("downloadUrl") or ""
+                # 从 cf_file 的 hashes 字段拿 sha1
+                cf_sha1 = ""
+                for h in (cf_file.get("hashes") or []):
+                    if h.get("algo") == 1:  # 1 = sha1
+                        cf_sha1 = h.get("value") or ""
+                        break
+                # 如果 cf_file 没 sha1，调 cf_get_file_detail 拿
+                if not cf_sha1 and cf_file.get("id"):
+                    try:
+                        detail = cf_get_file_detail(cf_file["id"])
+                        if detail:
+                            for h in (detail.get("hashes") or []):
+                                if h.get("algo") == 1:
+                                    cf_sha1 = h.get("value") or ""
+                                    break
+                    except Exception:
+                        pass
+
+                if download_url:
+                    file_size = cf_file.get("fileLength") or size
+                    entry = {
+                        "path": path_str,
+                        "hashes": {"sha1": cf_sha1, "sha512": ""},  # CF 不提供 sha512
+                        "downloads": [download_url],
+                        "fileSize": int(file_size),
+                        "env": {"client": client_env, "server": server_env},
+                    }
+                    miss_info = {
+                        "filename": jar.name, "path": path_str,
+                        "sha1_local": sha1_hash,
+                        "sha1_curseforge": cf_sha1,
+                        "size": size,
+                        "reason": "on_curseforge_matched_by_filename",
+                        "curseforge_mod_id": cf_mod_id,
+                        "curseforge_file_id": cf_file.get("id"),
+                        "curseforge_file_url": download_url,
+                        "curseforge_file_filename": cf_file.get("fileName"),
+                    }
+                    return entry, miss_info
+                else:
+                    return None, {
+                        "filename": jar.name, "path": path_str, "sha1": sha1_hash, "size": size,
+                        "reason": "on_curseforge_but_no_download_url",
+                        "curseforge_mod_id": cf_mod_id,
+                    }
+            else:
+                # CF 上找不到匹配文件
+                return None, {
+                    "filename": jar.name, "path": path_str, "sha1": sha1_hash, "size": size,
+                    "reason": "on_curseforge_but_no_matching_file",
+                    "curseforge_mod_id": cf_mod_id,
+                }
+        # cf_modids 里没找到这个 slug，继续走 missing 流程
+
+    # 4. 完全未找到
+    if modrinth_miss is not None:
+        return None, modrinth_miss
     return None, {
         "filename": jar.name, "path": path_str, "sha1": sha1_hash, "size": size,
-        "reason": "not_found_on_modrinth",
+        "reason": "not_found_on_modrinth_or_curseforge",
     }
 
 
@@ -732,16 +1021,23 @@ def render_missing_table(missing: List[Dict[str, Any]]) -> str:
 
 def reason_summary(reason: str) -> str:
     if reason.startswith("on_modrinth_matched_filename_exact"):
-        return "Modrinth 上有同名 jar（同 version，但本地 SHA1 不同） → 已用 Modrinth URL+SHA1 写入 JSON（客户端会下载 Modrinth 版本，不会升级到最新）"
+        return "Modrinth 上有同名 jar（同 version，但本地 SHA1 不同） → 已用 Modrinth URL+SHA1 写入 JSON"
     if reason.startswith("on_modrinth_matched_name_and_version"):
-        return "Modrinth 上有此 mod，slug 含于文件名 + 版本号严格匹配 → 已用 Modrinth URL+SHA1 写入 JSON（找的是用户文件名里写明的版本，不会升级到最新）"
+        return "Modrinth 上有此 mod，slug 含于文件名 + 版本号严格匹配 → 已用 Modrinth URL+SHA1 写入 JSON"
     if reason.startswith("on_modrinth_matched_version_fallback_to_latest"):
-        return "Modrinth 上有此 mod，但版本号不匹配 → 已用 Modrinth 最新版 URL+SHA1 写入 JSON（自动升级到最新版，由 --allow-version-fallback 选项启用）"
+        return "Modrinth 上有此 mod，但版本号不匹配 → 已用 Modrinth 最新版 URL+SHA1 写入 JSON（由 --allow-version-fallback 启用）"
+    if reason.startswith("on_curseforge_matched_by_filename"):
+        return "CurseForge 上有同名 jar → 已用 CF URL+SHA1 写入 JSON（由 --curseforge 启用）"
+    if reason == "on_curseforge_but_no_matching_file":
+        return "CurseForge 上有此 mod 项目，但没有文件名匹配的 file（可能版本不同）"
+    if reason == "on_curseforge_but_no_download_url":
+        return "CurseForge 上找到了匹配文件，但响应里没有 downloadUrl 字段（罕见）"
     return {
         "not_found_on_modrinth": "Modrinth 上完全没有此 mod（搜索 0 命中）",
-        "project_exists_but_no_matching_file": "Modrinth 上有此 mod 项目，但没有 version 的版本号与文件名解析出的版本号匹配（也不会自动取最新版，除非加 --allow-version-fallback）",
+        "not_found_on_modrinth_or_curseforge": "Modrinth 和 CurseForge 都没找到（CF 可能未启用或 cf-modids.txt 里没有该 mod 的映射）",
+        "project_exists_but_no_matching_file": "Modrinth 上有此 mod 项目，但没有 version 的版本号与文件名解析出的版本号匹配",
         "on_modrinth_but_different_jar": "Modrinth 上有同名文件，但 SHA1 与本地 jar 不同（旧 reason，新版已被 on_modrinth_matched_filename_exact 替代）",
-        "sha1_not_in_version_files": "SHA1 命中了 version 但 files 数组里没有匹配条目（罕见，Modrinth API 数据异常）",
+        "sha1_not_in_version_files": "SHA1 命中了 version 但 files 数组里没有匹配条目（罕见）",
         "no_download_url": "version 响应中匹配的文件条目缺少 url 字段（罕见）",
         "exception": "网络/解析异常",
     }.get(reason, reason)
@@ -760,6 +1056,13 @@ def run_scan(args: argparse.Namespace) -> int:
     print(f"[INFO] mods 目录: {mods_dir}")
     print(f"[INFO] 递归: {not args.no_recursive}，包含 disabled: {args.include_disabled}")
     print(f"[INFO] 文件名搜索回退: {args.enable_fallback_search}")
+    print(f"[INFO] CurseForge 回退: {args.enable_curseforge}")
+    if args.enable_curseforge:
+        cf_modids_path = Path(args.cf_modids_file)
+        cf_modids = load_cf_modids(cf_modids_path)
+        print(f"[INFO]   cf-modids 文件: {cf_modids_path}（{len(cf_modids)} 条映射）")
+    else:
+        cf_modids = {}
     print(f"[INFO] 并发线程数: {args.threads}")
 
     jars = collect_jars(mods_dir, args.include_disabled, recursive=not args.no_recursive)
@@ -780,6 +1083,8 @@ def run_scan(args: argparse.Namespace) -> int:
                 jar, mods_dir, args.client_env, args.server_env,
                 args.mc_version, args.enable_fallback_search,
                 args.allow_version_fallback,
+                cf_modids=cf_modids if cf_modids else None,
+                enable_curseforge=args.enable_curseforge,
             )
         except Exception as e:
             return idx, jar.name, None, {
@@ -806,6 +1111,8 @@ def run_scan(args: argparse.Namespace) -> int:
             if entry is not None:
                 if miss and miss.get("reason", "").startswith("on_modrinth_matched_"):
                     print(f"[{completed:>3}/{len(jars)}] {name} ({human_size(size)}) — FOUND (via {miss['reason']}, project={miss.get('modrinth_project_slug')}, modr_ver={miss.get('modrinth_version_number')})")
+                elif miss and miss.get("reason", "") == "on_curseforge_matched_by_filename":
+                    print(f"[{completed:>3}/{len(jars)}] {name} ({human_size(size)}) — FOUND (via CurseForge, modId={miss.get('curseforge_mod_id')}, file={miss.get('curseforge_file_filename')})")
                 else:
                     print(f"[{completed:>3}/{len(jars)}] {name} ({human_size(size)}) — FOUND  url={entry['downloads'][0][:80]}...")
             else:
@@ -952,6 +1259,12 @@ def interactive_cli() -> int:
     allow_version_fallback = yes_no(
         "版本号不匹配时自动取 Modrinth 最新版? (y/N, 开启会导致客户端下载与本地不同版本): ",
         default=False)
+    enable_curseforge = yes_no(
+        "启用 CurseForge 回退? (y/N, Modrinth 找不到时尝试 CF, 需要 cf-modids.txt 映射文件): ",
+        default=False)
+    cf_modids_file = "cf-modids.txt"
+    if enable_curseforge:
+        cf_modids_file = prompt("cf-modids 文件路径 (回车=cf-modids.txt): ", "cf-modids.txt").strip() or "cf-modids.txt"
     print()
 
     # 6. 线程数
@@ -1008,6 +1321,8 @@ def interactive_cli() -> int:
         missing_output="missing.txt",
         enable_fallback_search=fallback_search,
         allow_version_fallback=allow_version_fallback,
+        enable_curseforge=enable_curseforge,
+        cf_modids_file=cf_modids_file,
         threads=threads,
     )
     return run_scan(args)
@@ -1101,6 +1416,15 @@ def main() -> int:
         action="store_true", default=False,
         help="当文件名搜索回退也无法精确匹配版本号时，自动取 Modrinth 上最新版写入 JSON "
              "（默认关闭；开启会导致客户端下载与本地版本不同的 mod，请明确知情后开启）",
+    )
+    parser.add_argument(
+        "--curseforge", dest="enable_curseforge",
+        action="store_true", default=False,
+        help="启用 CurseForge 回退（Modrinth 找不到时尝试 CurseForge，需要 cf-modids.txt 提供 slug→modId 映射）",
+    )
+    parser.add_argument(
+        "--cf-modids-file", dest="cf_modids_file", default="cf-modids.txt",
+        help="CurseForge slug→modId 映射文件路径（默认: cf-modids.txt）",
     )
     parser.add_argument(
         "--threads", "-t", type=int, default=4,
