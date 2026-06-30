@@ -54,22 +54,30 @@ public final class ModrinthFile {
 
     /** 便捷方法：判断 client 是否需要此文件（"required" 或 "optional" 或 env 缺失）。 */
     public boolean isClientRequired() {
-        if (env == null) return true;
+        if (env == null) {
+            return true;
+        }
         String c = env.get("client");
-        if (c == null) return true;
+        if (c == null) {
+            return true;
+        }
         return "required".equalsIgnoreCase(c) || "optional".equalsIgnoreCase(c);
     }
 
     /** 便捷方法：判断 path 是否在 mods 目录下。 */
     public boolean isMod() {
-        if (path == null) return false;
+        if (path == null) {
+            return false;
+        }
         String normalized = path.replace('\\', '/');
         return normalized.startsWith("mods/") || normalized.equals("mods");
     }
 
     /** 便捷方法：返回纯文件名（去掉目录前缀）。 */
     public String fileName() {
-        if (path == null) return "";
+        if (path == null) {
+            return "";
+        }
         String normalized = path.replace('\\', '/');
         int slash = normalized.lastIndexOf('/');
         return slash >= 0 ? normalized.substring(slash + 1) : normalized;

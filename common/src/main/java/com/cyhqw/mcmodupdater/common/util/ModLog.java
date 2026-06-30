@@ -18,7 +18,8 @@ public final class ModLog {
 
     private static volatile Sink sink = new DefaultSink();
 
-    private ModLog() {}
+    private ModLog() {
+    }
 
     public static void setSink(Sink s) {
         sink = (s == null) ? new DefaultSink() : s;
@@ -50,11 +51,22 @@ public final class ModLog {
 
     /** Fallback sink: writes to stderr. Used before platform init. */
     private static final class DefaultSink implements Sink {
-        @Override public void info(String m)  { System.out.println("[mcmodupdater/INFO]  " + m); }
-        @Override public void warn(String m)  { System.err.println("[mcmodupdater/WARN]  " + m); }
-        @Override public void error(String m, Throwable t) {
+        @Override
+        public void info(String m) {
+            System.out.println("[mcmodupdater/INFO]  " + m);
+        }
+
+        @Override
+        public void warn(String m) {
+            System.err.println("[mcmodupdater/WARN]  " + m);
+        }
+
+        @Override
+        public void error(String m, Throwable t) {
             System.err.println("[mcmodupdater/ERROR] " + m);
-            if (t != null) t.printStackTrace(System.err);
+            if (t != null) {
+                t.printStackTrace(System.err);
+            }
         }
     }
 }

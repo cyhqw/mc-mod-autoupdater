@@ -14,17 +14,19 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
@@ -52,13 +54,19 @@ import java.util.stream.Stream;
  */
 public final class ModSyncer {
 
+    private static final Gson GSON = new Gson();
+    private static final String JAR_SUFFIX = ".jar";
+    private static final String DISABLED_JAR_SUFFIX = ".jar.disabled";
+
     private final Path modsDir;
+    private final Path normalizedModsDir;
     private final ModUpdaterConfig config;
     private final Path trackedModsPath;
     private final Set<String> trackedMods;
 
     public ModSyncer(Path modsDir, ModUpdaterConfig config, Path trackedModsPath) {
         this.modsDir = modsDir;
+        this.normalizedModsDir = modsDir.normalize();
         this.config = config;
         this.trackedModsPath = trackedModsPath;
         this.trackedMods = new LinkedHashSet<>(ModUpdaterConfig.loadTrackedMods(trackedModsPath));
@@ -79,10 +87,7 @@ public final class ModSyncer {
         String url = config.effectiveManifestUrl();
         ModrinthIndex index;
         try {
-            String body = HttpUtil.getString(
-                    url,
-                    config.effectiveHttpTimeoutMs(), 0);
-            index = new Gson().fromJson(JsonParser.parseString(body).getAsJsonObject(), ModrinthIndex.class);
+            index = fetchManifest(url);
         } catch (Exception e) {
             return CheckResult.error("Failed to fetch manifest: " + e.getMessage());
         }
@@ -118,56 +123,34 @@ public final class ModSyncer {
      * </ul>
      */
     public DiffResult analyzeDiff(ModrinthIndex index) {
+        String validationError = validateManifest(index);
+        if (validationError != null) {
+            return DiffResult.failure(validationError);
+        }
+
         try {
             Files.createDirectories(modsDir);
         } catch (IOException e) {
-            return new DiffResult(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(),
-                    "Could not create mods dir: " + e.getMessage());
+            return DiffResult.failure("Could not create mods dir: " + e.getMessage());
         }
 
-        Set<String> skip = config.skipModsSet();
-        Set<String> only = config.onlyModsSet();
-        Map<String, Path> existing = new HashMap<>();
-        try (Stream<Path> stream = Files.list(modsDir)) {
-            stream.filter(Files::isRegularFile).forEach(p -> {
-                String n = p.getFileName().toString();
-                if (n.toLowerCase().endsWith(".jar") || n.toLowerCase().endsWith(".jar.disabled")) {
-                    existing.put(n, p);
-                }
-            });
+        Map<String, Path> existing;
+        try {
+            existing = listExistingMods();
         } catch (IOException e) {
-            return new DiffResult(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(),
-                    "Could not list mods dir: " + e.getMessage());
+            return DiffResult.failure("Could not list mods dir: " + e.getMessage());
         }
 
+        ManifestSelection selection = selectManifestMods(index);
         List<DiffEntry> toDownload = new ArrayList<>();
         List<DiffEntry> toKeep = new ArrayList<>();
-        Set<String> expectedFilenames = new HashSet<>();
-        int skippedByFilter = 0;
-        int skippedByEnv = 0;
 
-        for (ModrinthFile file : index.files) {
-            if (!file.isMod()) continue;
-            if (!file.isClientRequired()) {
-                skippedByEnv++;
-                continue;
-            }
+        for (ModrinthFile file : selection.files) {
             String filename = file.fileName();
-            String filenameLower = filename.toLowerCase();
-            if (!skip.isEmpty() && skip.contains(filenameLower)) {
-                skippedByFilter++;
-                continue;
-            }
-            if (!only.isEmpty() && !only.contains(filenameLower)) {
-                skippedByFilter++;
-                continue;
-            }
-            expectedFilenames.add(filename);
-
             Path target = modsDir.resolve(filename).normalize();
             String remoteSha1 = file.sha1();
             long remoteSize = file.fileSize;
-            String downloadUrl = (file.downloads != null && !file.downloads.isEmpty()) ? file.downloads.get(0) : "";
+            String downloadUrl = firstDownloadUrl(file);
 
             if (Files.exists(target)) {
                 String localSha1;
@@ -186,7 +169,7 @@ public final class ModSyncer {
                             localSha1, remoteSha1,
                             target.toFile().length(), remoteSize, downloadUrl));
                 }
-                existing.remove(filename);
+                removeExistingIgnoreCase(existing, filename);
             } else {
                 toDownload.add(new DiffEntry(filename, DiffAction.ADD,
                         "", remoteSha1, 0L, remoteSize, downloadUrl));
@@ -198,12 +181,12 @@ public final class ModSyncer {
         List<DiffEntry> toRemove = new ArrayList<>();
         List<DiffEntry> playerOwned = new ArrayList<>();  // 玩家手动加的，不删
         for (Map.Entry<String, Path> e : existing.entrySet()) {
-            String filenameLower = e.getKey().toLowerCase();
-            if (trackedMods.contains(filenameLower) && !expectedFilenames.contains(e.getKey())) {
+            String filenameKey = lower(e.getKey());
+            if (trackedMods.contains(filenameKey) && !selection.expectedFilenameKeys.contains(filenameKey)) {
                 // tracked 但 manifest 不再有 → 删除
                 toRemove.add(new DiffEntry(e.getKey(), DiffAction.REMOVE,
                         "", "", e.getValue().toFile().length(), 0L, ""));
-            } else if (!trackedMods.contains(filenameLower)) {
+            } else if (!trackedMods.contains(filenameKey)) {
                 // 玩家手动加的 → 不删，记录为 PLAYER_OWNED
                 playerOwned.add(new DiffEntry(e.getKey(), DiffAction.PLAYER_OWNED,
                         "", "", e.getValue().toFile().length(), 0L, ""));
@@ -213,7 +196,7 @@ public final class ModSyncer {
         ModLog.info("[Diff] tracked=%d, toDownload=%d, toKeep=%d, toRemove=%d, playerOwned=%d",
                 trackedMods.size(), toDownload.size(), toKeep.size(), toRemove.size(), playerOwned.size());
         return new DiffResult(toDownload, toKeep, toRemove, playerOwned, null)
-                .withSkipped(skippedByFilter, skippedByEnv);
+                .withSkipped(selection.skippedByFilter, selection.skippedByEnv);
     }
 
     /**
@@ -234,20 +217,16 @@ public final class ModSyncer {
         try {
             Files.createDirectories(modsDir);
         } catch (IOException e) {
-            SyncResult r = SyncResult.failure("Could not create mods dir: " + e.getMessage());
-            return r;
+            return SyncResult.failure("Could not create mods dir: " + e.getMessage());
         }
 
         // 立即回调一次，让 GUI 显示"正在获取清单..."
-        if (callback != null) callback.onProgress(0, 1, "正在获取清单...", ActionStatus.SKIPPED, "");
+        notifyProgress(callback, 0, 1, "正在获取清单...", ActionStatus.SKIPPED, "");
 
         String url = config.effectiveManifestUrl();
         ModrinthIndex index;
         try {
-            String body = HttpUtil.getString(
-                    url,
-                    config.effectiveHttpTimeoutMs(), 0);
-            index = new Gson().fromJson(JsonParser.parseString(body).getAsJsonObject(), ModrinthIndex.class);
+            index = fetchManifest(url);
         } catch (Exception e) {
             return SyncResult.failure("Failed to fetch manifest from " + url + ": " + e.getMessage());
         }
@@ -263,62 +242,28 @@ public final class ModSyncer {
             return SyncResult.failure(validationError);
         }
 
-        Set<String> skip = config.skipModsSet();
-        Set<String> only = config.onlyModsSet();
-
-        Map<String, Path> existing = new HashMap<>();
-        try (Stream<Path> stream = Files.list(modsDir)) {
-            stream.filter(Files::isRegularFile).forEach(p -> {
-                String n = p.getFileName().toString();
-                if (n.toLowerCase().endsWith(".jar") || n.toLowerCase().endsWith(".jar.disabled")) {
-                    existing.put(n, p);
-                }
-            });
+        Map<String, Path> existing;
+        try {
+            existing = listExistingMods();
         } catch (IOException e) {
             return SyncResult.failure("Could not list mods dir: " + e.getMessage());
         }
 
         // 收集要处理的文件列表
-        List<ModrinthFile> toProcess = new ArrayList<>();
-        Set<String> expectedFilenames = new HashSet<>();
-        int skippedByFilter = 0;
-        int skippedByEnv = 0;
-        for (ModrinthFile file : index.files) {
-            if (!file.isMod()) continue;
-            if (!file.isClientRequired()) {
-                skippedByEnv++;
-                continue;
-            }
-            String filename = file.fileName();
-            String filenameLower = filename.toLowerCase();
-            if (!skip.isEmpty() && skip.contains(filenameLower)) {
-                skippedByFilter++;
-                continue;
-            }
-            if (!only.isEmpty() && !only.contains(filenameLower)) {
-                skippedByFilter++;
-                continue;
-            }
-            expectedFilenames.add(filename);
-            toProcess.add(file);
-        }
+        ManifestSelection selection = selectManifestMods(index);
+        List<ModrinthFile> toProcess = selection.files;
 
         int total = toProcess.size();
-        if (callback != null) callback.onProgress(0, total, "正在准备下载列表...", ActionStatus.SKIPPED, "");
+        notifyProgress(callback, 0, total, "正在准备下载列表...", ActionStatus.SKIPPED, "");
 
         // 多线程并发下载
-        Semaphore concurrency = new Semaphore(Math.max(1, config.maxConcurrentDownloads));
-        ExecutorService pool = Executors.newFixedThreadPool(Math.max(1, config.maxConcurrentDownloads));
+        int maxConcurrentDownloads = Math.max(1, config.maxConcurrentDownloads);
+        ExecutorService pool = Executors.newFixedThreadPool(maxConcurrentDownloads);
         Map<String, CompletableFuture<SyncAction>> futuresMap = new LinkedHashMap<>();
         for (ModrinthFile file : toProcess) {
             futuresMap.put(file.fileName(), CompletableFuture.supplyAsync(() -> {
                 try {
-                    concurrency.acquire();
-                    try {
-                        return syncOne(file, existing);
-                    } finally {
-                        concurrency.release();
-                    }
+                    return syncOne(file);
                 } catch (Exception e) {
                     return new SyncAction(file, ActionStatus.FAILED, e.getMessage());
                 }
@@ -333,16 +278,17 @@ public final class ModSyncer {
             CompletableFuture<SyncAction> f = e.getValue();
             CompletableFuture<Void> pf = f.thenAccept(action -> {
                 int cur = completed.incrementAndGet();
-                if (callback != null) {
-                    callback.onProgress(cur, total, filename, action.status, action.detail);
-                }
+                notifyProgress(callback, cur, total, filename, action.status, action.detail);
             });
             progressFutures.add(pf);
         }
         try {
             CompletableFuture.allOf(progressFutures.toArray(new CompletableFuture[0])).get();
-        } catch (Exception e) {
+        } catch (InterruptedException e) {
             ModLog.warn("Progress wait interrupted: %s", e.getMessage());
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException e) {
+            ModLog.warn("Progress wait failed: %s", e.getMessage());
         }
         pool.shutdown();
 
@@ -356,7 +302,7 @@ public final class ModSyncer {
                 actions.add(action);
                 // 下载成功或已存在的 mod 都加入 tracked
                 if (action.status == ActionStatus.DOWNLOADED || action.status == ActionStatus.SKIPPED) {
-                    newTrackedMods.add(file.fileName().toLowerCase());
+                    newTrackedMods.add(lower(file.fileName()));
                 }
             } catch (Exception e) {
                 actions.add(new SyncAction(file, ActionStatus.FAILED, "future error: " + e.getMessage()));
@@ -375,8 +321,12 @@ public final class ModSyncer {
                     break;
                 }
             }
-            if (actualFilename == null) continue;  // 本地已没有这个文件
-            if (expectedFilenames.contains(actualFilename)) continue;  // manifest 还有，不删
+            if (actualFilename == null) {
+                continue;  // 本地已没有这个文件
+            }
+            if (selection.expectedFilenameKeys.contains(lower(actualFilename))) {
+                continue;  // manifest 还有，不删
+            }
 
             // tracked 但 manifest 不再有 → 删除
             Path target = existing.get(actualFilename);
@@ -409,15 +359,15 @@ public final class ModSyncer {
         boolean failed = actions.stream().anyMatch(a -> a.status == ActionStatus.FAILED);
         String remoteVersion = index.versionId == null ? "" : index.versionId;
         return new SyncResult(index, actions, removed, changed, failed, null,
-                skippedByFilter, skippedByEnv, remoteVersion, newTrackedMods);
+                selection.skippedByFilter, selection.skippedByEnv, remoteVersion, newTrackedMods);
     }
 
-    private SyncAction syncOne(ModrinthFile file, Map<String, Path> existing) {
+    private SyncAction syncOne(ModrinthFile file) {
         String filename = file.fileName();
         Path target = modsDir.resolve(filename).normalize();
         Path part = modsDir.resolve(filename + ".part").normalize();
 
-        if (!target.getParent().equals(modsDir.normalize())) {
+        if (!isDirectChildOfModsDir(target)) {
             return new SyncAction(file, ActionStatus.FAILED, "unsafe path: " + file.path);
         }
 
@@ -465,12 +415,16 @@ public final class ModSyncer {
                     return new SyncAction(file, ActionStatus.DOWNLOADED, "ok");
                 } catch (Exception e) {
                     lastErr = e;
-                    try { Files.deleteIfExists(part); } catch (IOException ignored) {}
+                    deleteQuietly(part);
                 }
             }
             if (attempt < retries) {
-                try { Thread.sleep(250L * (1L << Math.min(attempt, 5))); }
-                catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+                try {
+                    Thread.sleep(250L * (1L << Math.min(attempt, 5)));
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
         }
         return new SyncAction(file, ActionStatus.FAILED,
@@ -478,6 +432,9 @@ public final class ModSyncer {
     }
 
     private String validateManifest(ModrinthIndex index) {
+        if (index == null || index.files == null) {
+            return "Manifest was empty or malformed";
+        }
         if (index.formatVersion != 1) {
             return "Unsupported manifest formatVersion: " + index.formatVersion + " (expected 1)";
         }
@@ -490,20 +447,22 @@ public final class ModSyncer {
             if (file.path == null || file.path.isBlank()) {
                 return "Manifest file entry at index " + i + " is missing path";
             }
-            if (!file.isMod()) continue;
+            if (!file.isMod()) {
+                continue;
+            }
             String filename = file.fileName();
             if (filename.isEmpty() || filename.equals("mods")) {
                 return "Manifest file path is malformed: " + file.path;
             }
             Path target = modsDir.resolve(filename).normalize();
-            if (!target.getParent().equals(modsDir.normalize())) {
+            if (!isDirectChildOfModsDir(target)) {
                 return "Manifest filename escapes mods dir: " + file.path;
             }
-            String lower = filename.toLowerCase();
-            if (!lower.endsWith(".jar") && !lower.endsWith(".jar.disabled")) {
+            String filenameKey = lower(filename);
+            if (!isJarModName(filenameKey)) {
                 return "Manifest filename is not a jar: " + filename;
             }
-            if (!filenames.add(filename)) {
+            if (!filenames.add(filenameKey)) {
                 return "Manifest contains duplicate filename: " + filename;
             }
             if (file.downloads == null || file.downloads.isEmpty()) {
@@ -514,6 +473,115 @@ public final class ModSyncer {
             }
         }
         return null;
+    }
+
+    private ModrinthIndex fetchManifest(String url) throws IOException, InterruptedException {
+        String body = HttpUtil.getString(url, config.effectiveHttpTimeoutMs(), 0);
+        return GSON.fromJson(JsonParser.parseString(body).getAsJsonObject(), ModrinthIndex.class);
+    }
+
+    private Map<String, Path> listExistingMods() throws IOException {
+        Map<String, Path> existing = new HashMap<>();
+        try (Stream<Path> stream = Files.list(modsDir)) {
+            stream.filter(Files::isRegularFile).forEach(path -> {
+                String filename = path.getFileName().toString();
+                if (isJarModName(lower(filename))) {
+                    existing.put(filename, path);
+                }
+            });
+        }
+        return existing;
+    }
+
+    private ManifestSelection selectManifestMods(ModrinthIndex index) {
+        Set<String> skip = config.skipModsSet();
+        Set<String> only = config.onlyModsSet();
+        List<ModrinthFile> selected = new ArrayList<>();
+        Set<String> expectedFilenameKeys = new HashSet<>();
+        int skippedByFilter = 0;
+        int skippedByEnv = 0;
+
+        for (ModrinthFile file : index.files) {
+            if (!file.isMod()) {
+                continue;
+            }
+            if (!file.isClientRequired()) {
+                skippedByEnv++;
+                continue;
+            }
+            String filenameKey = lower(file.fileName());
+            if (!skip.isEmpty() && skip.contains(filenameKey)) {
+                skippedByFilter++;
+                continue;
+            }
+            if (!only.isEmpty() && !only.contains(filenameKey)) {
+                skippedByFilter++;
+                continue;
+            }
+            expectedFilenameKeys.add(filenameKey);
+            selected.add(file);
+        }
+
+        return new ManifestSelection(selected, expectedFilenameKeys, skippedByFilter, skippedByEnv);
+    }
+
+    private static String firstDownloadUrl(ModrinthFile file) {
+        return (file.downloads != null && !file.downloads.isEmpty()) ? file.downloads.get(0) : "";
+    }
+
+    private static void removeExistingIgnoreCase(Map<String, Path> existing, String filename) {
+        String keyToRemove = null;
+        for (String existingFilename : existing.keySet()) {
+            if (existingFilename.equalsIgnoreCase(filename)) {
+                keyToRemove = existingFilename;
+                break;
+            }
+        }
+        if (keyToRemove != null) {
+            existing.remove(keyToRemove);
+        }
+    }
+
+    private void notifyProgress(ProgressCallback callback, int current, int total,
+                                String filename, ActionStatus status, String detail) {
+        if (callback != null) {
+            callback.onProgress(current, total, filename, status, detail);
+        }
+    }
+
+    private void deleteQuietly(Path path) {
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException ignored) {
+        }
+    }
+
+    private boolean isDirectChildOfModsDir(Path target) {
+        Path parent = target.getParent();
+        return parent != null && parent.equals(normalizedModsDir);
+    }
+
+    private static boolean isJarModName(String filename) {
+        return filename.endsWith(JAR_SUFFIX) || filename.endsWith(DISABLED_JAR_SUFFIX);
+    }
+
+    private static String lower(String value) {
+        return value.toLowerCase(Locale.ROOT);
+    }
+
+    private static final class ManifestSelection {
+        private final List<ModrinthFile> files;
+        private final Set<String> expectedFilenameKeys;
+        private final int skippedByFilter;
+        private final int skippedByEnv;
+
+        private ManifestSelection(List<ModrinthFile> files, Set<String> expectedFilenameKeys,
+                                  int skippedByFilter, int skippedByEnv) {
+            this.files = Collections.unmodifiableList(files);
+            this.expectedFilenameKeys = Collections.unmodifiableSet(expectedFilenameKeys);
+            this.skippedByFilter = skippedByFilter;
+            this.skippedByEnv = skippedByEnv;
+        }
     }
 
     // ------------------------------------------------------------------
@@ -579,6 +647,11 @@ public final class ModSyncer {
             this.skippedByFilter = byFilter;
             this.skippedByEnv = byEnv;
             return this;
+        }
+
+        public static DiffResult failure(String message) {
+            return new DiffResult(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(),
+                    message);
         }
 
         public boolean hasError() {

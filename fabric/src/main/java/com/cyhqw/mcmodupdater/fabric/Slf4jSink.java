@@ -24,7 +24,10 @@ final class Slf4jSink implements ModLog.Sink {
 
     @Override
     public void error(String message, Throwable t) {
-        if (t != null) logger.error(message, t);
-        else logger.error(message);
+        if (t != null) {
+            logger.error(message, t);
+        } else {
+            logger.error(message);
+        }
     }
 }

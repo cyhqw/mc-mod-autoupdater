@@ -32,7 +32,8 @@ import java.nio.file.Path;
  */
 public final class LaunchSyncRunner {
 
-    private LaunchSyncRunner() {}
+    private LaunchSyncRunner() {
+    }
 
     /**
      * 在游戏加载前执行同步检查。此方法会阻塞调用线程直到玩家关闭对话框。

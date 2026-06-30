@@ -174,7 +174,9 @@ public final class ModUpdaterConfig {
         Set<String> sorted = new LinkedHashSet<>();
         for (String m : trackedMods) {
             String v = m.trim().toLowerCase();
-            if (!v.isEmpty()) sorted.add(v);
+            if (!v.isEmpty()) {
+                sorted.add(v);
+            }
         }
         StringBuilder sb = new StringBuilder();
         sb.append("# MC Mod Auto-Updater — tracked mods list\n");
@@ -221,11 +223,15 @@ public final class ModUpdaterConfig {
     }
 
     private static Set<String> parseCsvToSet(String csv) {
-        if (csv == null || csv.isBlank()) return Collections.emptySet();
+        if (csv == null || csv.isBlank()) {
+            return Collections.emptySet();
+        }
         Set<String> set = new LinkedHashSet<>();
         for (String raw : csv.split(",")) {
             String v = raw.trim().toLowerCase();
-            if (!v.isEmpty()) set.add(v);
+            if (!v.isEmpty()) {
+                set.add(v);
+            }
         }
         return set;
     }

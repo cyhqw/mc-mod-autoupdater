@@ -26,7 +26,8 @@ public final class HttpUtil {
             .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
 
-    private HttpUtil() {}
+    private HttpUtil() {
+    }
 
     /** GET 文本响应。使用默认超时，不重试。 */
     public static String getString(String url) throws IOException, InterruptedException {
@@ -85,7 +86,10 @@ public final class HttpUtil {
                 return;
             } catch (IOException e) {
                 last = e;
-                try { java.nio.file.Files.deleteIfExists(dest); } catch (IOException ignored) {}
+                try {
+                    java.nio.file.Files.deleteIfExists(dest);
+                } catch (IOException ignored) {
+                }
                 if (attempt < retries) {
                     ModLog.info("Download %s failed (attempt %d/%d): %s — retrying",
                             url, attempt + 1, retries + 1, e.getMessage());

@@ -142,8 +142,11 @@ public final class UpdateDialog {
         // 3. 差异摘要
         int addCount = 0, updateCount = 0, removeCount = 0, keepCount = 0, playerOwnedCount = 0;
         for (DiffEntry e : diff.toDownload) {
-            if (e.action == DiffAction.ADD) addCount++;
-            else if (e.action == DiffAction.UPDATE) updateCount++;
+            if (e.action == DiffAction.ADD) {
+                addCount++;
+            } else if (e.action == DiffAction.UPDATE) {
+                updateCount++;
+            }
         }
         removeCount = diff.toRemove.size();
         keepCount = diff.toKeep.size();
@@ -243,7 +246,8 @@ public final class UpdateDialog {
         dialog.setLocationRelativeTo(null);
         try {
             dialog.setAlwaysOnTop(true);
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
         dialog.setVisible(true);
     }
 
@@ -263,9 +267,13 @@ public final class UpdateDialog {
             progressBar.setValue(current);
             progressBar.setString(String.format("%d / %d (%d%%)", current, total, pct));
             String statusIcon;
-            if (status == ModSyncer.ActionStatus.DOWNLOADED) statusIcon = "✓";
-            else if (status == ModSyncer.ActionStatus.FAILED) statusIcon = "✗";
-            else statusIcon = "→";
+            if (status == ModSyncer.ActionStatus.DOWNLOADED) {
+                statusIcon = "✓";
+            } else if (status == ModSyncer.ActionStatus.FAILED) {
+                statusIcon = "✗";
+            } else {
+                statusIcon = "→";
+            }
             currentFileLabel.setText(String.format("%s [%d/%d] %s — %s",
                     statusIcon, current, total, filename, status));
             // 追加到日志
@@ -341,7 +349,6 @@ public final class UpdateDialog {
     private static final class DiffTableModel extends AbstractTableModel {
         private final String[] columns = {"#", "文件名", "操作", "本地大小", "远端大小", "URL"};
         private final List<DiffEntry> rows;
-        private final java.util.List<ModSyncer.SyncAction> actions = new java.util.ArrayList<>();
 
         DiffTableModel(DiffResult diff) {
             rows = new java.util.ArrayList<>();
@@ -370,30 +377,47 @@ public final class UpdateDialog {
         public Object getValueAt(int row, int column) {
             DiffEntry e = rows.get(row);
             switch (column) {
-                case 0: return row + 1;
-                case 1: return e.filename;
-                case 2: return actionLabel(e.action);
-                case 3: return e.localSize > 0 ? humanSize(e.localSize) : "-";
-                case 4: return e.remoteSize > 0 ? humanSize(e.remoteSize) : "-";
-                case 5: return e.downloadUrl != null ? e.downloadUrl : "";
-                default: return "";
+                case 0:
+                    return row + 1;
+                case 1:
+                    return e.filename;
+                case 2:
+                    return actionLabel(e.action);
+                case 3:
+                    return e.localSize > 0 ? humanSize(e.localSize) : "-";
+                case 4:
+                    return e.remoteSize > 0 ? humanSize(e.remoteSize) : "-";
+                case 5:
+                    return e.downloadUrl != null ? e.downloadUrl : "";
+                default:
+                    return "";
             }
         }
 
         private String actionLabel(DiffAction a) {
             switch (a) {
-                case ADD: return "新增";
-                case UPDATE: return "更新";
-                case KEEP: return "保留";
-                case REMOVE: return "删除";
-                case PLAYER_OWNED: return "玩家 mod";
-                default: return a.toString();
+                case ADD:
+                    return "新增";
+                case UPDATE:
+                    return "更新";
+                case KEEP:
+                    return "保留";
+                case REMOVE:
+                    return "删除";
+                case PLAYER_OWNED:
+                    return "玩家 mod";
+                default:
+                    return a.toString();
             }
         }
 
         private String humanSize(long bytes) {
-            if (bytes < 1024) return bytes + " B";
-            if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
+            if (bytes < 1024) {
+                return bytes + " B";
+            }
+            if (bytes < 1024 * 1024) {
+                return String.format("%.1f KB", bytes / 1024.0);
+            }
             return String.format("%.1f MB", bytes / (1024.0 * 1024));
         }
     }

@@ -13,7 +13,8 @@ import java.security.NoSuchAlgorithmException;
  */
 public final class HashUtils {
 
-    private HashUtils() {}
+    private HashUtils() {
+    }
 
     public static String sha1(Path file) throws IOException {
         return hash(file, "SHA-1");

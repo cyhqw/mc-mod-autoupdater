@@ -12,9 +12,22 @@ final class Log4jSink implements ModLog.Sink {
         this.logger = logger;
     }
 
-    @Override public void info(String message) { logger.info(message); }
-    @Override public void warn(String message) { logger.warn(message); }
-    @Override public void error(String message, Throwable t) {
-        if (t != null) logger.error(message, t); else logger.error(message);
+    @Override
+    public void info(String message) {
+        logger.info(message);
+    }
+
+    @Override
+    public void warn(String message) {
+        logger.warn(message);
+    }
+
+    @Override
+    public void error(String message, Throwable t) {
+        if (t != null) {
+            logger.error(message, t);
+        } else {
+            logger.error(message);
+        }
     }
 }
