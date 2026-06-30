@@ -209,6 +209,102 @@ def cf_get_mod_files(mod_id: int, game_version: str = "", mod_loader_type: int =
     return data.get("data", []) or []
 
 
+def cf_search_by_slug(slug: str) -> Optional[Dict[str, Any]]:
+    """
+    通过 slug 精确搜索 CurseForge mod。
+    返回 mod 条目（含 id, name, slug），或 None（未找到）。
+    """
+    url = f"{CURSEFORGE_API}/mods/search?" + urllib.parse.urlencode({
+        "gameId": "432",
+        "slug": slug,
+    })
+    data = cf_http_get_json(url)
+    if data is None:
+        return None
+    results = data.get("data", []) or []
+    return results[0] if results else None
+
+
+def cf_search_by_query(query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    """
+    通过关键词模糊搜索 CurseForge mod。
+    返回候选列表。每个条目含 id, name, slug。
+    """
+    url = f"{CURSEFORGE_API}/mods/search?" + urllib.parse.urlencode({
+        "gameId": "432",
+        "classId": "6",
+        "searchFilter": query,
+        "pageSize": str(limit),
+    })
+    data = cf_http_get_json(url)
+    if data is None:
+        return []
+    return data.get("data", []) or []
+
+
+def cf_find_mod_id(parsed: Dict[str, str]) -> Tuple[Optional[int], str, str]:
+    """
+    根据解析出的 mod 名变体，自动查找 CurseForge modId。
+    返回 (modId, matched_slug, matched_name)，未找到返回 (None, "", "")。
+
+    策略:
+      1. 用 mod 名变体作为 slug 精确搜索 (CF /mods/search?slug=...)
+         尝试的 slug 变体: 原始、去 - 转 _、去 _ 转 -、全小写、去尾部数字等
+      2. slug 搜索失败 → 用 mod 名作为 searchFilter 模糊搜索
+         取第一个结果，但仍需用户验证
+    """
+    # 1. 尝试 slug 精确搜索
+    tried_slugs = set()
+    for variant in parsed["name_variants"]:
+        v = variant.lower()
+        # 直接用
+        if v not in tried_slugs:
+            tried_slugs.add(v)
+            try:
+                m = cf_search_by_slug(v)
+                if m:
+                    return m.get("id"), m.get("slug", ""), m.get("name", "")
+            except Exception:
+                pass
+            time.sleep(0.05)
+        # - 转 _
+        v_alt = v.replace("-", "_")
+        if v_alt not in tried_slugs:
+            tried_slugs.add(v_alt)
+            try:
+                m = cf_search_by_slug(v_alt)
+                if m:
+                    return m.get("id"), m.get("slug", ""), m.get("name", "")
+            except Exception:
+                pass
+            time.sleep(0.05)
+        # _ 转 -
+        v_alt = v.replace("_", "-")
+        if v_alt not in tried_slugs:
+            tried_slugs.add(v_alt)
+            try:
+                m = cf_search_by_slug(v_alt)
+                if m:
+                    return m.get("id"), m.get("slug", ""), m.get("name", "")
+            except Exception:
+                pass
+            time.sleep(0.05)
+
+    # 2. 模糊搜索（searchFilter）
+    # 用 mod 名第一个变体
+    if parsed["name_variants"]:
+        query = parsed["name_variants"][0]
+        try:
+            results = cf_search_by_query(query, limit=3)
+            if results:
+                m = results[0]
+                return m.get("id"), m.get("slug", ""), m.get("name", "")
+        except Exception:
+            pass
+
+    return None, "", ""
+
+
 def cf_get_file_detail(file_id: int) -> Optional[Dict[str, Any]]:
     """获取 CurseForge file 详情（含 sha1/md5）。"""
     url = f"{CURSEFORGE_API}/mods/files"
@@ -898,25 +994,42 @@ def build_file_entry(
     else:
         modrinth_miss = None
 
-    # 3. CurseForge 回退（仅当启用且 cf_modids 提供了 slug→modId 映射）
-    if enable_curseforge and cf_modids:
+    # 3. CurseForge 回退（仅当启用）
+    if enable_curseforge:
         parsed = parse_filename(jar.name)
-        # 尝试用 mod_name 的多个变体匹配 cf_modids 中的 slug
         cf_mod_id = None
-        for variant in parsed["name_variants"]:
-            v_lower = variant.lower()
-            if v_lower in cf_modids:
-                cf_mod_id = cf_modids[v_lower]
-                break
-            # 试去掉 - 跟 _ 互换
-            v_alt = v_lower.replace("-", "_")
-            if v_alt in cf_modids:
-                cf_mod_id = cf_modids[v_alt]
-                break
-            v_alt = v_lower.replace("_", "-")
-            if v_alt in cf_modids:
-                cf_mod_id = cf_modids[v_alt]
-                break
+        cf_matched_slug = ""
+        cf_matched_name = ""
+
+        # 3a. 优先用 cf-modids.txt 映射（如果提供了）
+        if cf_modids:
+            for variant in parsed["name_variants"]:
+                v_lower = variant.lower()
+                if v_lower in cf_modids:
+                    cf_mod_id = cf_modids[v_lower]
+                    cf_matched_slug = v_lower
+                    cf_matched_name = "(from cf-modids.txt)"
+                    break
+                v_alt = v_lower.replace("-", "_")
+                if v_alt in cf_modids:
+                    cf_mod_id = cf_modids[v_alt]
+                    cf_matched_slug = v_alt
+                    cf_matched_name = "(from cf-modids.txt)"
+                    break
+                v_alt = v_lower.replace("_", "-")
+                if v_alt in cf_modids:
+                    cf_mod_id = cf_modids[v_alt]
+                    cf_matched_slug = v_alt
+                    cf_matched_name = "(from cf-modids.txt)"
+                    break
+
+        # 3b. 映射里没有 → 自动用 CF search API 查找
+        if cf_mod_id is None:
+            try:
+                cf_mod_id, cf_matched_slug, cf_matched_name = cf_find_mod_id(parsed)
+            except Exception as e:
+                sys.stderr.write(f"[WARN] CF search failed for {jar.name}: {e}\n")
+                cf_mod_id = None
 
         if cf_mod_id is not None:
             try:
@@ -962,6 +1075,8 @@ def build_file_entry(
                         "size": size,
                         "reason": "on_curseforge_matched_by_filename",
                         "curseforge_mod_id": cf_mod_id,
+                        "curseforge_mod_slug": cf_matched_slug,
+                        "curseforge_mod_name": cf_matched_name,
                         "curseforge_file_id": cf_file.get("id"),
                         "curseforge_file_url": download_url,
                         "curseforge_file_filename": cf_file.get("fileName"),
@@ -972,15 +1087,18 @@ def build_file_entry(
                         "filename": jar.name, "path": path_str, "sha1": sha1_hash, "size": size,
                         "reason": "on_curseforge_but_no_download_url",
                         "curseforge_mod_id": cf_mod_id,
+                        "curseforge_mod_slug": cf_matched_slug,
                     }
             else:
-                # CF 上找不到匹配文件
+                # CF 上找到了 mod 但无文件名匹配
                 return None, {
                     "filename": jar.name, "path": path_str, "sha1": sha1_hash, "size": size,
                     "reason": "on_curseforge_but_no_matching_file",
                     "curseforge_mod_id": cf_mod_id,
+                    "curseforge_mod_slug": cf_matched_slug,
+                    "curseforge_mod_name": cf_matched_name,
                 }
-        # cf_modids 里没找到这个 slug，继续走 missing 流程
+        # CF 上完全没找到此 mod，继续走 missing 流程
 
     # 4. 完全未找到
     if modrinth_miss is not None:
@@ -1112,7 +1230,7 @@ def run_scan(args: argparse.Namespace) -> int:
                 if miss and miss.get("reason", "").startswith("on_modrinth_matched_"):
                     print(f"[{completed:>3}/{len(jars)}] {name} ({human_size(size)}) — FOUND (via {miss['reason']}, project={miss.get('modrinth_project_slug')}, modr_ver={miss.get('modrinth_version_number')})")
                 elif miss and miss.get("reason", "") == "on_curseforge_matched_by_filename":
-                    print(f"[{completed:>3}/{len(jars)}] {name} ({human_size(size)}) — FOUND (via CurseForge, modId={miss.get('curseforge_mod_id')}, file={miss.get('curseforge_file_filename')})")
+                    print(f"[{completed:>3}/{len(jars)}] {name} ({human_size(size)}) — FOUND (via CurseForge, slug={miss.get('curseforge_mod_slug')}, modId={miss.get('curseforge_mod_id')}, file={miss.get('curseforge_file_filename')})")
                 else:
                     print(f"[{completed:>3}/{len(jars)}] {name} ({human_size(size)}) — FOUND  url={entry['downloads'][0][:80]}...")
             else:

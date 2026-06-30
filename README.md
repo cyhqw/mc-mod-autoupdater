@@ -329,7 +329,13 @@ backupOldMods=true
 | `--server-env`            | `optional`              | 每个文件 `env.server` 的默认值                                  |
 | `--include-disabled`      | (flag)                  | 同时扫描 `.jar.disabled` 文件                                   |
 | `--no-recursive`          | (flag)                  | 不递归子目录，仅扫描 `--mods-dir` 顶层                          |
+| `--no-fallback-search`    | (flag)                  | SHA1 反查失败时不启用 Modrinth 文件名搜索回退（更快，但 reason 更笼统） |
+| `--allow-version-fallback`| (flag)                  | Modrinth 文件名搜索也无版本号匹配时，自动取 Modrinth 最新版（会升级版本，谨慎开启） |
+| `--curseforge`            | (flag)                  | **启用 CurseForge 回退**：Modrinth 找不到时自动查 CF（已预置 API key） |
+| `--cf-modids-file`        | `cf-modids.txt`         | CF slug→modId 映射文件（可选，未提供时脚本会自动用 CF search API 查找） |
+| `--threads`, `-t`         | `4`                     | 并发线程数                                                      |
 | `--missing-output`        | `missing.txt`           | 未找到 mod 列表的输出文件；留空则不写                           |
+| `--interactive`, `-i`     | (flag)                  | 进入交互式 CLI 向导（忽略其它参数）                             |
 
 > `--loader` 和 `--loader-version` 必须同时指定或同时省略。
 
@@ -337,9 +343,22 @@ backupOldMods=true
 
 | 退出码 | 含义                                                              |
 | ------ | ----------------------------------------------------------------- |
-| `0`    | 全部 mod 都成功在 Modrinth 上找到，`modrinth.index.json` 已生成  |
+| `0`    | 全部 mod 都成功找到，`modrinth.index.json` 已生成                |
 | `1`    | 严重错误（mods 目录不存在、JSON 写入失败等）                      |
-| `2`    | 部分文件未在 Modrinth 上找到，`modrinth.index.json` 仍已生成      |
+| `2`    | 部分文件未找到，`modrinth.index.json` 仍已生成                    |
+
+### CurseForge 回退说明
+
+开启 `--curseforge` 后，当 Modrinth 找不到某个 mod 时（SHA1 不匹配、版本不同、CF 独占），脚本会自动：
+
+1. 用 mod 名变体作为 slug 调 CurseForge `/mods/search?slug=...` 精确搜索
+2. slug 搜索失败 → 用 mod 名作为 searchFilter 模糊搜索
+3. 找到 modId 后调 `/mods/{modId}/files?gameVersion=1.20.1&modLoaderType=1` 列出文件
+4. 找文件名完全匹配的 file，写入 JSON（用 CF 的 sha1 + edge.forgecdn.net URL）
+
+**CurseForge API key** 已预置在脚本里（`DEFAULT_CURSEFORGE_API_KEY`），用户无需配置即可使用。如需用自己的 key，设置环境变量 `CURSEFORGE_API_KEY` 覆盖。
+
+**cf-modids.txt（可选）**：如果用户想强制指定某些 mod 的 modId（避免自动搜索误匹配），可以在 `cf-modids.txt` 中提供 `slug=modId` 映射。脚本会优先使用此映射，找不到时才自动搜索。参考 [`cf-modids.txt.example`](cf-modids.txt.example)。
 
 ### `missing.txt` 格式
 
@@ -347,31 +366,44 @@ backupOldMods=true
 
 ```
 # 未在 Modrinth 上找到的 mod 列表
-# 格式: filename <TAB> sha1 <TAB> path <TAB> reason
+# 格式: filename <TAB> sha1 <TAB> path <TAB> reason <TAB> extra
 
-my-private-mod.jar   a1b2c3d4...   mods/my-private-mod.jar   not_found_on_modrinth
+my-private-mod.jar   a1b2c3d4...   mods/my-private-mod.jar   not_found_on_modrinth_or_curseforge
 ```
 
 `reason` 可能的值：
-- `not_found_on_modrinth` — Modrinth API 返回 404，该 SHA1 不在 Modrinth 数据库中
-- `sha1_not_in_version_files` — 找到了 version 但其 `files[]` 中没有匹配的 SHA1（罕见，通常意味着该 jar 是私有构建）
-- `no_download_url` — version 响应中匹配的文件条目缺少 `url` 字段
+- `on_modrinth_matched_filename_exact` / `on_modrinth_matched_name_and_version` — Modrinth 上找到，已写入 JSON
+- `on_curseforge_matched_by_filename` — CurseForge 上找到，已写入 JSON
+- `on_curseforge_but_no_matching_file` — CF 上有 mod 但无文件名匹配（可能版本不同）
+- `project_exists_but_no_matching_file` — Modrinth 上有 mod 但无匹配 version
+- `not_found_on_modrinth_or_curseforge` — 两个平台都没找到（私有 mod 或被下架）
 - `exception: <msg>` — 网络/解析异常
 
 ### 工作原理
 
 ```
-对每个 .jar 文件:
+对每个 .jar 文件（多线程并行）:
   1. 计算 SHA1 和 SHA512
-  2. GET https://api.modrinth.com/v2/version_file/{sha1}?algorithm=sha1
-       - 200 → 返回 version JSON
-       - 404 → 该 jar 不在 Modrinth 上，记入 missing.txt
-  3. 在 version.files[] 中找到 hashes.sha1 匹配的条目
-  4. 提取该条目的 url 字段作为 downloads[0]
-  5. 组装 Modrinth file 条目写入 modrinth.index.json
+  2. Modrinth: GET /version_file/{sha1}?algorithm=sha1
+       - 200 → 返回 version JSON → 用其 url + sha1
+       - 404 → 该 jar 不在 Modrinth 上
+  3. Modrinth 文件名搜索回退:
+       - 解析文件名 → 提取 mod 名 + 版本号 + loader
+       - GET /search?query=... → 候选 project 列表
+       - 遍历候选 project 的 version 列表:
+         * filename 完全匹配 → 用 Modrinth URL+SHA1
+         * slug 含于文件名 + version_number 严格匹配 → 用 Modrinth URL+SHA1
+         * (可选) version_fallback_to_latest → 用 Modrinth 最新版
+  4. CurseForge 回退 (仅当 --curseforge):
+       - 用 mod 名变体调 CF /mods/search?slug=... 精确搜索
+       - 找到 modId 后调 /mods/{modId}/files?gameVersion=1.20.1&modLoaderType=1
+       - 找文件名完全匹配的 file → 用 CF URL+SHA1
+  5. 都没找到 → 记入 missing.txt
 ```
 
 > Modrinth 的 SHA1 反查 API 是最准确的匹配方式 —— 不依赖文件名或 mod id，直接以 jar 内容哈希为准。即使你重命名了文件，只要内容相同就能正确匹配。
+>
+> CurseForge 回退解决了"jar 来自 CF、与 Modrinth 上的同版本 jar SHA1 不同"的情况。
 
 ---
 
