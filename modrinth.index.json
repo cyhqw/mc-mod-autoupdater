@@ -1,0 +1,1289 @@
+{
+  "game": "minecraft",
+  "formatVersion": 1,
+  "versionId": "1.0.0",
+  "name": "KERONG 1.6.0v",
+  "summary": "科融服务器专属整合包-极致优化",
+  "files": [
+    {
+      "path": "mods/0Pack2Reload-Forge-1.20.1-1.0.1.jar",
+      "hashes": {
+        "sha1": "5d57174a0af5248c2d683a47e95d2935a7bcdeae",
+        "sha512": "ee664043aa7743940c4923724bde3020f6481752b2ca3851fc98f4aee606d1874ca027abc4389310a3e089f9b69467db93f737d5ea75dc7021dcbc86c0cda718"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/2hl2n0xu/versions/kKMQHO2i/0Pack2Reload-Forge-1.20.1-1.0.1.jar"
+      ],
+      "fileSize": 8537
+    },
+    {
+      "path": "mods/111-forge-1.20-4.0.2.jar",
+      "hashes": {
+        "sha1": "3e7c7fcdc037a6ae3d9146e718d87fc83f88f6d5",
+        "sha512": "be677ed6dd4aa60a67ec1b83c89db8ed7460c34f54e5783df94245b9e0a5af9d3e12ebb322cb04210dfaa6527ad1e555a998931adfd69c5a4c57ac0e4dc15819"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/onSQdWhM/versions/pdAXmKcS/libIPN-forge-1.20-4.0.2.jar"
+      ],
+      "fileSize": 693301
+    },
+    {
+      "path": "mods/architectury-9.2.14-forge.jar",
+      "hashes": {
+        "sha1": "a52918a500ff421180a1cbd1a0cabee712134ec4",
+        "sha512": "cf67f2050cafa00f0bee42e6d7bef77fdb808ac4f71742f7b4d6d5c1e6ffb49561a5a252f332d2b78a9767bdb5faa284611790dba303fbdc736ae36d794f61c7"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/lhGA9TYQ/versions/1MKTLiiG/architectury-9.2.14-forge.jar"
+      ],
+      "fileSize": 580602
+    },
+    {
+      "path": "mods/async-locator-forge-1.20-1.3.0.jar",
+      "hashes": {
+        "sha1": "fa8e3d65644e5bf1ea62f1ba3c94b0982dfb7357",
+        "sha512": "84cfbd80bf0a5a53ffa42f1c154e8f5991f27e5924df011849693e00310a2654962f9d9e1aaa237931d8fcc2fe13bd2908f1cd92261b1fed8d5fa2b685d83194"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/rkN8aqci/versions/Eip0qUwF/async-locator-forge-1.20-1.3.0.jar"
+      ],
+      "fileSize": 264951
+    },
+    {
+      "path": "mods/AttributeFix-Forge-1.20.1-21.0.4.jar",
+      "hashes": {
+        "sha1": "6eb69343eb21d38f95d1b1d00e6bc777bdb336fa",
+        "sha512": "a4f1431c3abb23d97ae6d742721fcc2d1d97b6f9e72e492cc13f2471b608614b8cbbde513fa0a6f8d002f27168130850bf358d405cd2120c979927d7e88fe3d3"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/lOOpEntO/versions/Y42wjyly/AttributeFix-Forge-1.20.1-21.0.4.jar"
+      ],
+      "fileSize": 19471
+    },
+    {
+      "path": "mods/Aviator Dreams 2.0.1-2 1.20.1-Forge.jar",
+      "hashes": {
+        "sha1": "6984d09916b29bca472d16e57d5f2cfbb95295f8",
+        "sha512": "9f3cc8295b60e5bc8115a344a4274fbfeff120b0218c2e401f998e0e62171b94733428e46eb0b10da7ba8c479a8fbd691c8512628028eb0a8a0a621ab97b6249"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/VPQwbMgx/versions/auFIj0I6/Aviator%20Dreams%202.0.1-2%201.20.1-Forge.jar"
+      ],
+      "fileSize": 10317988
+    },
+    {
+      "path": "mods/botarium-forge-1.20.1-2.3.4.jar",
+      "hashes": {
+        "sha1": "a6928cb03b7c5f81900d3d3c8e8c8f6a89a51a5b",
+        "sha512": "aa3530dde50966e47958690b02a343c4de3782d32ae3b2cb75b2155eebb76e172a292768d846b8d14a97bc9ebe18f1f655eaa3469fce13b2b4b15b16af0aba01"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/2u6LRnMa/versions/O7D6FTfW/botarium-forge-1.20.1-2.3.4.jar"
+      ],
+      "fileSize": 157633
+    },
+    {
+      "path": "mods/CBMultipart-1.20.1-3.3.0.159-universal.jar",
+      "hashes": {
+        "sha1": "a7c111c320c35077ef4667315cdea11053652acc",
+        "sha512": "ebbef1b58d670fa8f000caf0e5e43490e5991f4f3fb522aa98a0eabebd51f5ec018de5cd1b8d680602535935b1fbca160ae8463d611ee65ac0d86413df6e150e"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/LmvnWWSV/versions/fNgu12bx/CBMultipart-1.20.1-3.3.0.159-universal.jar"
+      ],
+      "fileSize": 527817
+    },
+    {
+      "path": "mods/chloride-FORGE-mc1.20.1-v1.7.5.jar",
+      "hashes": {
+        "sha1": "b5f658b9328cda4b03080fa0164cf26be23a3e75",
+        "sha512": "c32608136e247055d26fd45bd1a86e6d424a22bc380b0fc5ea55c3322966ac033dca75679069bfe8e6b0322d5f3a676e5f2243f31f4d6ea0e1b846f1cf8d0732"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/yD9qW65f/versions/sKb384Nw/chloride-FORGE-mc1.20.1-v1.7.5.jar"
+      ],
+      "fileSize": 956080
+    },
+    {
+      "path": "mods/cloth-config-11.1.136-forge.jar",
+      "hashes": {
+        "sha1": "c65d07748acc57ceb45d53b3964368b84f34d54f",
+        "sha512": "137c4af99c53d77317cbfb1cc8c49fc2761708b49d1992f51fd846960df41dde3a83519c987e081508d4ed90c603566f3d5a6cb620ad9d85b8f4de59aa9115ef"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/9s6osm5g/versions/t8TXrZvZ/cloth-config-11.1.136-forge.jar"
+      ],
+      "fileSize": 1181413
+    },
+    {
+      "path": "mods/CodeChickenLib-1.20.1-4.4.0.516-universal.jar",
+      "hashes": {
+        "sha1": "f9b90ff58442b5967366fd90d24980a34540518d",
+        "sha512": "c3854f8c4ef06073f22990fc804597d257f9c2a355d95deda9caa6d56e864fac4302798662909a229aaa63d82fcca219d42e0ee13584e613678f5e52ef99b21c"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/2gq0ALnz/versions/pxajg7Ob/CodeChickenLib-1.20.1-4.4.0.516-universal.jar"
+      ],
+      "fileSize": 1472390
+    },
+    {
+      "path": "mods/createbetterfps-1.20.1-1.1.2.jar",
+      "hashes": {
+        "sha1": "e3906e1b5cc33ad9ff930fc65b316564a3059fbf",
+        "sha512": "44ce50b3180f76e383c3d7f2ef96dfe62168b2e9a95b78c65e1d835f477ca7cd307ac2a05486ddf728739061d089ae158bf794826cbae7d20253b701f1c17020"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/lMYIHZNH/versions/75GMC9GD/createbetterfps-1.20.1-1.1.2.jar"
+      ],
+      "fileSize": 25214
+    },
+    {
+      "path": "mods/CullLessLeaves-Reforged-1.20.1-1.0.5.jar",
+      "hashes": {
+        "sha1": "71b1603071461e036a3ba2aaeeb52cc10fa3d348",
+        "sha512": "1d037fd49a9b80eecf2ed8e3b64178d1fbae7cc2a511813ab8b627479713e79a98af0896366e1ad2a3fa3f9849eab086166c1a27227f6d9370c2738132d859e6"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/qthuEuVy/versions/wPOb8yEG/CullLessLeaves-Reforged-1.20.1-1.0.5.jar"
+      ],
+      "fileSize": 22474
+    },
+    {
+      "path": "mods/effortless-1.20.1-3.4.0.jar",
+      "hashes": {
+        "sha1": "22be4fe3debadc2f55f36a2a27c5f1ea6d9f7736",
+        "sha512": "26b2b9e914597541eef2e804294189d462da46508e00ed3f67e270c0107420aff0304fd32832deb25928c26c66d98bba5e606a4281e8269717dafa183188a876"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/EF68hjiy/versions/OswWvyth/effortless-1.20.1-3.4.0.jar"
+      ],
+      "fileSize": 1906064
+    },
+    {
+      "path": "mods/embeddium-0.3.31+mc1.20.1.jar",
+      "hashes": {
+        "sha1": "bb2fa8f3e493af16af9160d049f96c614a1faf2f",
+        "sha512": "ffbf2da4685260a4d5c14c621708bd20722563f084f042d3dfb0a7b87f048e39299648c854a93939129da0d23a15a91ec628560d601e76074b08e275f6e132e9"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/sk9rgfiA/versions/UTbfe5d1/embeddium-0.3.31%2Bmc1.20.1.jar"
+      ],
+      "fileSize": 1320675
+    },
+    {
+      "path": "mods/entityculling-forge-1.10.0-mc1.20.1.jar",
+      "hashes": {
+        "sha1": "b7e15f04d29f4d97afff8a6ce5a0162d2a595819",
+        "sha512": "af2a989a8be0892cc13e13412aa4dfc2145c97431d333ccd3ea7f192440758cb195404523706b74d262671df591ca6857edd45ceb1e4de17b4ae3e8e8073fbeb"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/NNAgCjsB/versions/2bbjEAea/entityculling-forge-1.10.0-mc1.20.1.jar"
+      ],
+      "fileSize": 1577833
+    },
+    {
+      "path": "mods/fabric-api-0.92.6+1.20.1.jar",
+      "hashes": {
+        "sha1": "3ec0a88b64f252257df6287e9a1d47ed96331e5d",
+        "sha512": "2bd2ed0cee22305b7ff49597c103a57c8fbe5f64be54a906796d48b589862626c951ff4cbf5cb1ed764a4d6479d69c3077594e693b7a291240eeea2bb3132b0c"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/P7dR8mSH/versions/UapVHwiP/fabric-api-0.92.6%2B1.20.1.jar"
+      ],
+      "fileSize": 2107873
+    },
+    {
+      "path": "mods/FastEvent-1.20.1-1.1.1.jar",
+      "hashes": {
+        "sha1": "7d12a2230422f964fa5df5ca0433e9425254aaf5",
+        "sha512": "f399514bf50e3b395be439d7b154d99cb0f3c987727d35b05b7afee58de2f8416a3e3cd4169932fb220becadc071cef5f956ed1a5eeb4fbeb6c48688c0f8c736"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/LauZQ6kM/versions/GjwRoxLR/FastEvent-1.20.1-1.1.1.jar"
+      ],
+      "fileSize": 32785
+    },
+    {
+      "path": "mods/flerovium-forge-1.20.1-1.2.18-all.jar",
+      "hashes": {
+        "sha1": "319af234013d646ef289515efa8bb0c3df2ca34d",
+        "sha512": "feabbd89712a63876952df07aacc51d3f4dca6a69986528dee8d71ee63cb49372c513d5a474d6a096f0161ebad69baf8bdd088f9286dba14bdc58b30b4fc08bd"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/4Rh1Mobu/versions/rfznaZum/flerovium-forge-1.20.1-1.2.18-all.jar"
+      ],
+      "fileSize": 253961
+    },
+    {
+      "path": "mods/freecam-forge-1.2.1+1.20.jar",
+      "hashes": {
+        "sha1": "e4224b56750a1fe3956ae73a65f4470be3e0df3b",
+        "sha512": "14d5194c02d6281094efdc857e608b412cdb84ffbf94a06401c8509daa74914273e18224f05d9fe9bcea23fa70d5350c6edaf8bf657e58787f08a4553169c0d2"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/XeEZ3fK2/versions/bvoDmWip/freecam-forge-1.2.1%2B1.20.jar"
+      ],
+      "fileSize": 75389
+    },
+    {
+      "path": "mods/fzzy_config-0.7.6+1.20.1+forge.jar",
+      "hashes": {
+        "sha1": "2e9ca1c5f028c251e1bc18b9ebaa06d401c8e624",
+        "sha512": "dff242c555006ddab4ffca5ca005b4186cfec3e9f5a9409dc15e91bf1e4eadb33508e458709d0b154b372e214ceb6d8cd343f1e718eb426db4570a292b0e4b0c"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/hYykXjDp/versions/7MmXhjWs/fzzy_config-0.7.6%2B1.20.1%2Bforge.jar"
+      ],
+      "fileSize": 2374667
+    },
+    {
+      "path": "mods/geckolib-forge-1.20.1-4.8.3.jar",
+      "hashes": {
+        "sha1": "fead1d1645e16cfa02f39113481ead355230f8fd",
+        "sha512": "938f1f703fa77a2e05aad4afa1052260521badee006d29529d0ed4e2d3fbaae47c9ffbc95b5c4982c3386e7e7d6592c9c79df31597cc8238db41fc0b1e431db6"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/8BmcQJ2H/versions/HVdLnQMI/geckolib-forge-1.20.1-4.8.3.jar"
+      ],
+      "fileSize": 1039047
+    },
+    {
+      "path": "mods/Glodium-1.20-1.5-forge.jar",
+      "hashes": {
+        "sha1": "c7534db3248adfcf39a6158b423dfc9bfc99a378",
+        "sha512": "57ba996845f588191b12f5e4c578b6f33a2b431facd54176dc61abba0f08f86cbc03c39cf795c7d5dea4926a923ec88e646a25d1a9a3a5bb9508fcb79a661a5e"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/UhW5uCKw/versions/eoUaDkZf/Glodium-1.20-1.5-forge.jar"
+      ],
+      "fileSize": 60550
+    },
+    {
+      "path": "mods/guideme-20.1.14.jar",
+      "hashes": {
+        "sha1": "57d883148f04989128505a1bd8919629440f714f",
+        "sha512": "15311cb0607205d2da3eb369499b8523bd0d8fa41e30c87c0b0e5756df5ea2123389262e6883f66e6c7b1d43d68e20cdfec73b31c202df8fbb99fa80d4fe7b1d"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/Ck4E7v7R/versions/9YGnKYDF/guideme-20.1.14.jar"
+      ],
+      "fileSize": 9413204
+    },
+    {
+      "path": "mods/ImmediatelyFast-Forge-1.5.4+1.20.4.jar",
+      "hashes": {
+        "sha1": "e2e60485a0c3efa72f1948c952b095150e3ba4fc",
+        "sha512": "b4a30951b41367cbf6567e38d7ddada4a381b430e2bd2d2b01e195d1a8c434e9811af61b28962c1152bf5c669f3ede2551694df4e1b500b35cdf78178aa9e9f0"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/5ZwdcRci/versions/OomXW3xp/ImmediatelyFast-Forge-1.5.4%2B1.20.4.jar"
+      ],
+      "fileSize": 538992
+    },
+    {
+      "path": "mods/ImmersiveUI-FORGE-0.3.0.jar",
+      "hashes": {
+        "sha1": "b2b36a49f1b8daf8d8fc0521f532fb706649c09c",
+        "sha512": "7a1810467de4e383ac8876bab2176c9f32465cc13ff7c598877ce3c1339b9a698b6beff8b4291d008e06a1fbc0a5570fac945597398532e70eba12e0b6f061aa"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/9wv7LuMc/versions/YbO8SNFq/ImmersiveUI-FORGE-0.3.0.jar"
+      ],
+      "fileSize": 401514
+    },
+    {
+      "path": "mods/immersive_optimization-forge-1.20.1-0.1.4.jar",
+      "hashes": {
+        "sha1": "c9922d12d6aa985c44a7dc1338ec4934caac7647",
+        "sha512": "db7922d6300e8a1eb24711b68e359e9880cba6237e5cf0a01006e4fded93da700ae6e651243c1caa7fb38acd2d768aa611cb02f8606482be3d624c8f8188a39d"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/vNZgQmjg/versions/x7rjIeqE/immersive_optimization-forge-1.20.1-0.1.4.jar"
+      ],
+      "fileSize": 52117
+    },
+    {
+      "path": "mods/Ixeris-4.1.5+1.20.1-forge.jar",
+      "hashes": {
+        "sha1": "fac592a77ce54ead9e57456e1e58e76f0de8191b",
+        "sha512": "8bcf4ba1595c44b318438b326f9fa085857bdf4cb07932409cf91f68e9d661a35e97dcbf0565d77ad53a5946a31ba70f85de3037c846dbd07d84ef1909033225"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/p8RJPJIC/versions/bfwNCG16/Ixeris-4.1.5%2B1.20.1-forge.jar"
+      ],
+      "fileSize": 1457485
+    },
+    {
+      "path": "mods/Jade-1.20.1-Forge-11.13.2.jar",
+      "hashes": {
+        "sha1": "1997e5fe2db3a0575ca79bfe4720019f01fd2b8c",
+        "sha512": "612c7535d28ae0cb336f31b790770b3dcb5173d496fb74eabcb28d06e3b88e72733128060cefc4ae4147cce528a8e8c09688a36d8f9e11dbf77e93d89b743560"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/nvQzSEkH/versions/LecuGude/Jade-1.20.1-Forge-11.13.2.jar"
+      ],
+      "fileSize": 552486
+    },
+    {
+      "path": "mods/JadeAddons-1.20.1-Forge-5.5.0.jar",
+      "hashes": {
+        "sha1": "5e74e87f61cf05c18457f09dfa1cb70332b6b777",
+        "sha512": "a11d4604453f7aa7cbeafcd2b399c7e39e66a5b38cccdbc7ad7dbce3f79f0a632568d28665ffb22a29676c78ad2089d9bf13793518fc453270a0bbbbbcfd91fd"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/xuDOzCLy/versions/AvIT9ADi/JadeAddons-1.20.1-Forge-5.5.0.jar"
+      ],
+      "fileSize": 91771
+    },
+    {
+      "path": "mods/konkrete_forge_1.8.0_MC_1.20-1.20.1.jar",
+      "hashes": {
+        "sha1": "2019d821bed9071daabed43979433a5473ceee49",
+        "sha512": "df79a0c64da14ca2b27dc04a72d85ce5c8e7c498e7b72da4d7bfddd592bb4bac165e70afe33fac97446e4996fffd8003350df07ede2a77233dddec77b8ff0ee7"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/J81TRJWm/versions/skYziQQL/konkrete_forge_1.8.0_MC_1.20-1.20.1.jar"
+      ],
+      "fileSize": 625185
+    },
+    {
+      "path": "mods/kotlinforforge-4.11.0-all.jar",
+      "hashes": {
+        "sha1": "1fd8acfd75a2be2dc3cdcc7e816482b2e427d6e5",
+        "sha512": "d72707078f0c4fde78981c638ca976722f22a64ce74bdb489258790fe9886d763a7b1e0dfbc5429ddd3105d8a65d177f06242dfb1457e219e56c70dd3e8cbf2c"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/ordsPcFz/versions/hmeyC41q/kotlinforforge-4.11.0-all.jar"
+      ],
+      "fileSize": 7193768
+    },
+    {
+      "path": "mods/Krypton FNP-forge-1.20.1-0.2.28.2-1.20.1.jar",
+      "hashes": {
+        "sha1": "84f719905f9c01943b7e67ba61b0624ae6b073a3",
+        "sha512": "103e08777f541b54240a1fd42669f308f1b672ab5e6ffb7469ca2a9fd1827cb22b4d41b53d08a1f064c250c5d2eb84dec96daf604c927354154fdec443693997"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/JkxWVYwU/versions/e37D0ChM/Krypton%20FNP-forge-1.20.1-0.2.28.2-1.20.1.jar"
+      ],
+      "fileSize": 1794016
+    },
+    {
+      "path": "mods/lightspeed-1.20.1-1.1.2hotfix.jar",
+      "hashes": {
+        "sha1": "9d9ac4e588d27bc51b33498172e95539d03f9381",
+        "sha512": "d795acc8f1614235c1062f94b58448cfc5893671123ef80b1ac372e871d34195a22abda1155bd400dd6ca2cfd6e7eab9d904f53cc97cea715c8f6c0d8aaee151"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/niZHUKxZ/versions/MUVGGG4m/lightspeed-1.20.1-1.1.2hotfix.jar"
+      ],
+      "fileSize": 40285
+    },
+    {
+      "path": "mods/melody_forge_1.0.3_MC_1.20.1-1.20.4.jar",
+      "hashes": {
+        "sha1": "e0942d396a70c09038e6c2e5e1da6505178249b8",
+        "sha512": "43c60d0cb98b1642d663e3cea68d50c01e9be82361851bf40c5c869e6593499aaf4b410d891d07a083f3c4b2df7fc06b2f8fbaa3c661a5061d46e250c017d30f"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/CVT4pFB2/versions/lJlW5r8R/melody_forge_1.0.3_MC_1.20.1-1.20.4.jar"
+      ],
+      "fileSize": 37178
+    },
+    {
+      "path": "mods/modernfix-forge-5.26.2+mc1.20.1.jar",
+      "hashes": {
+        "sha1": "0adfc122e9f632d8847688c4c3ed20a1af182afa",
+        "sha512": "46e6fb85c3097d3dedca0409fda83d58b3724a0905a5f5417b8bfaa2cb8bce388e6d42c762ee615413a9bc2692fa4b302d7e2405fe6fd7ad82c9def6a5da9028"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/nmDcB62a/versions/Uvlhuprw/modernfix-forge-5.26.2%2Bmc1.20.1.jar"
+      ],
+      "fileSize": 826829
+    },
+    {
+      "path": "mods/NaNny-1.0.1.jar",
+      "hashes": {
+        "sha1": "1e716311028b1c3147b569b89cd6697ccd5874d4",
+        "sha512": "2af88c417772d37a43d77d172cd56f509b7c762cf1bc8f0200facc9fd6232b4076184065bd0f9c1b48f6611cdc7ff2a9d10751f2025244fca29be4c591cea7a8"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/6EpIGT2g/versions/xmdj69Pa/NaNny-1.0.1.jar"
+      ],
+      "fileSize": 5086
+    },
+    {
+      "path": "mods/Not Enough Recipe Book-FORGE-0.4.1+1.20.1.jar",
+      "hashes": {
+        "sha1": "c0806369f4257149664904db44efc60bd1785c17",
+        "sha512": "599e085062c6d7a7368a4cf0d47ce319bcaf570bf5966ec6f8b9529f006e315a7f4ab3d2f263c38564a501b9d7031e956d4ee881ed2e13999869d61cbc079702"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/bQh7xzFq/versions/xXV9YBzF/Not%20Enough%20Recipe%20Book-FORGE-0.4.1%2B1.20.1.jar"
+      ],
+      "fileSize": 21667
+    },
+    {
+      "path": "mods/OctoLib-FORGE-0.5.0.1+1.20.1.jar",
+      "hashes": {
+        "sha1": "9eab28baff36942e1c924489e34753df10f40208",
+        "sha512": "e0bbe3a999f3a8c32b7dc0fd5bae61f62915dc5be40ac97a777f0784cdfaaed74b74f48cd407b9a8abb081ff331fbd272c9d4e08125f48f091435c926468d5c6"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/RH2KUdKJ/versions/HZ7KmyXp/OctoLib-FORGE-0.5.0.1%2B1.20.1.jar"
+      ],
+      "fileSize": 424035
+    },
+    {
+      "path": "mods/oculus-mc1.20.1-1.8.0.jar",
+      "hashes": {
+        "sha1": "984f774e71790deaec674c7587bd24e0711871b2",
+        "sha512": "1bb4ac77400d6684347988ed298a692c2cb15cf7923693607eb8739b171a20fef7412259e9e157111d9ce21779badab386029956f7d2283a9e611722a373e9d5"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/GchcoXML/versions/iQ1SwGc3/oculus-mc1.20.1-1.8.0.jar"
+      ],
+      "fileSize": 2851119
+    },
+    {
+      "path": "mods/packetfixer-3.3.1-1.18-1.20.4-merged.jar",
+      "hashes": {
+        "sha1": "0bef29023c8cadb2934d78a8b0066b49d4460974",
+        "sha512": "e098addf143dafa9e516ad07cb0ddaa489035e19c306e6f78b0afef6f776ce27d2386f2ede1879bb477e420ca8a00831f099f1a92a508e3085a45fbb87103405"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/c7m1mi73/versions/96y8nmkX/packetfixer-3.3.1-1.18-1.20.4-merged.jar"
+      ],
+      "fileSize": 188673
+    },
+    {
+      "path": "mods/particle_core-0.3.3+1.20.1+forge.jar",
+      "hashes": {
+        "sha1": "1da5744853d17979033d5ee3cd4251b8340ea7be",
+        "sha512": "46694c2525b1e14b20ec6043ce9f7e7b92b9fe3a7d55c995951ec54d7acecf1c1a8a674d829efb42e6d1d9c7b0a29fd0edc834a876fb5a85ad90f35b932748ff"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/RSeLon5O/versions/cFafZfyr/particle_core-0.3.3%2B1.20.1%2Bforge.jar"
+      ],
+      "fileSize": 773448
+    },
+    {
+      "path": "mods/player-animation-lib-forge-1.0.2-rc1+1.20.jar",
+      "hashes": {
+        "sha1": "16808f94a41d45d8e986b4e4ea6b02ba57fa058a",
+        "sha512": "cb9f6a3aaa943823a85fdd716ddb3c7623af2b3520926c3a98d170c52d31908894808fb61c52bea39bae622dbab59d50b4bad56f7ca0533a9c3350d412c33729"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/gedNE4y2/versions/xe2EVE6q/player-animation-lib-forge-1.0.2-rc1%2B1.20.jar"
+      ],
+      "fileSize": 181437
+    },
+    {
+      "path": "mods/playerladder-0.6.1-forge-1.20.1.jar",
+      "hashes": {
+        "sha1": "e2096640589fa2091284b720d147a398be865f67",
+        "sha512": "4fa59f8d3c4c5a28a5124023f99918b15a8fc9588f544b356920ba8291f1a6bf91aee67a63a1db29b6f2ef462c78817331e0d5e642bbb3c51d7f1e2367952622"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/YCcTxyDM/versions/ol37llym/playerladder-0.6.1-forge-1.20.1.jar"
+      ],
+      "fileSize": 18878
+    },
+    {
+      "path": "mods/Prism-1.20.1-forge-1.0.5.jar",
+      "hashes": {
+        "sha1": "bcb4bbb1052f49ed4fe6e7d5d7f91f68d45c3fe3",
+        "sha512": "b73de6bf581f5f28d86baa3eeb8ac0ff30aa9a35280da7fa528547bbb9e0aff5f931b434e143a4dfc4d11ae03ce52bc1cfa359beb8b656880e75bf1aa8d91b81"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/1OE8wbN0/versions/FFyss87M/Prism-1.20.1-forge-1.0.5.jar"
+      ],
+      "fileSize": 52205
+    },
+    {
+      "path": "mods/Quick Skin - Forge - 1.20.1-2.6.2.4.jar",
+      "hashes": {
+        "sha1": "ace85ce63a791ae84d323d469d0b76003ab32718",
+        "sha512": "fd480f7ab366cf6979de746c2ea3cfe477b8664f56a4e223cbe39b519f215a5f28571fdead3376627790406586d77acb6ee4cc0362ccbd87a96e4ee51c9b6c1b"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/zAIE84Ch/versions/87G3F0Xr/Quick%20Skin%20-%20Forge%20-%201.20.1-2.6.2.4.jar"
+      ],
+      "fileSize": 3793684
+    },
+    {
+      "path": "mods/resourcefulconfig-forge-1.20.1-2.1.3.jar",
+      "hashes": {
+        "sha1": "597d40920dcc935f963842c817dcc4901862ab14",
+        "sha512": "2e05fe27529d00d7808a83dbe0c475a0fb96a20ebfd5c9767f4cc8dcd9a865e20a18de41fb9ed710e5cd2e0211c30303b43c1f22702af1d50ee7212ad83a54d3"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/M1953qlQ/versions/DERs8u7v/resourcefulconfig-forge-1.20.1-2.1.3.jar"
+      ],
+      "fileSize": 136923
+    },
+    {
+      "path": "mods/ruok-forge_1.20.1_Pre-Release_6-1.7.4.jar",
+      "hashes": {
+        "sha1": "210086567b4655520e79588df4ab6fa2741531d0",
+        "sha512": "6302224e6d444c6206b3a5ebbb4044089df9d1da015d684135d1eb5f3c2a07f12662941293394c5d82de6a532bc25849f38b8dfbaaee265dd93ffc69da8b1254"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/aTsegPV0/versions/Gqcz5jjv/ruok-forge_1.20.1_Pre-Release_6-1.7.4.jar"
+      ],
+      "fileSize": 1050096
+    },
+    {
+      "path": "mods/sodiumdynamiclights-forge-1.0.10-1.20.1.jar",
+      "hashes": {
+        "sha1": "d27524e85bed0f0af83c03be46f9ca3eb02a1be9",
+        "sha512": "b8527199be5a8b4bc758a4f320586b5886e6ff657718f52d464386b1e3c695d7bfe644e2ef9487a869c93c0866818995ecd47b9e1a19054929242682e37f58b7"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/PxQSWIcD/versions/I156ee3A/sodiumdynamiclights-forge-1.0.10-1.20.1.jar"
+      ],
+      "fileSize": 511601
+    },
+    {
+      "path": "mods/structure_layout_optimizer-forge-1.0.11.jar",
+      "hashes": {
+        "sha1": "c2f2d42c987a611c6a14769ec02099e3439dc0f3",
+        "sha512": "e90a40a8a3b4f9a369d9a80bfb7dced3e42a400701d4cb76ace0db8a3eb84757ade10eaa6f9ec9e3dc78dcd4edc87173bdc19f64a4fb8fc047d24ae57ca4466d"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/ayPU0OHc/versions/EazfspJH/structure_layout_optimizer-forge-1.0.11.jar"
+      ],
+      "fileSize": 246413
+    },
+    {
+      "path": "mods/YungsApi-1.20-Forge-4.0.6.jar",
+      "hashes": {
+        "sha1": "af584b690f5646c6032002b58abc4591beed3833",
+        "sha512": "7d83d94a90e55a712f6508485c044ff202916e9b9b9166b75177cb8f2eb919543bbbe1547d11c41cfd4763820f934235f47c0b26dd9e89bc1030954afa9fb889"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/Ua7DFN59/versions/PJOYAmAs/YungsApi-1.20-Forge-4.0.6.jar"
+      ],
+      "fileSize": 370524
+    },
+    {
+      "path": "mods/[3D 皮肤层] skinlayers3d-forge-1.11.1-mc1.20.1.jar",
+      "hashes": {
+        "sha1": "b64ccb25ebe4cb7b09d1dd4561dbc519d5f02382",
+        "sha512": "b416f33c72050d7e86fe5113fa3d875109f0f041db493acd3240e6598ac00ed8cea7456086c53556473239fb39407ca9d47569ec7910925ffff2aae5deafa91f"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/zV5r3pPn/versions/egmtcJdf/skinlayers3d-forge-1.11.1-mc1.20.1.jar"
+      ],
+      "fileSize": 2163998
+    },
+    {
+      "path": "mods/[Curios API]curios-forge-5.14.1+1.20.1.jar",
+      "hashes": {
+        "sha1": "452175b95ad3db6ff58bb8968f6bf7a9d1e0f480",
+        "sha512": "1373f95fd111c977db2f6adcef8e4eb486a2d926a3e17374692dee4ac3d65857de6446c16922b531aa5ace2c23c666a7fcc28c720b2917c1e04808d15648ba87"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/vvuO3ImH/versions/IPQlZkz1/curios-forge-5.14.1%2B1.20.1.jar"
+      ],
+      "fileSize": 398066
+    },
+    {
+      "path": "mods/[JEI物品管理器] jei-1.20.1-forge-15.20.0.130.jar",
+      "hashes": {
+        "sha1": "1c51bf6df51ffbb1c5efe23780a7a3d053421f34",
+        "sha512": "1987d97dfee85090117b3f5572059fcbf242f8dd4b41e2002c21ff271100aaf2ccc2f3ff912fa36a8cfec946c0a55e170d98c8b10347121357c9d428e08f6427"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/u6dRKJwZ/versions/RTFeXsvE/jei-1.20.1-forge-15.20.0.130.jar"
+      ],
+      "fileSize": 1409705
+    },
+    {
+      "path": "mods/[Minecraft Chromium 嵌入式框架] mcef-forge-2.1.6-1.20.1.jar",
+      "hashes": {
+        "sha1": "6d9fa1433d509be242d1d74282d02a0fbebde110",
+        "sha512": "6df8c8e70ab15b3662404a3a398c18689fb7591e84e1a913d8939bee144f030cd2aeaee4e68f1ed159881a59796a37a7f628dd442e6ba7836005e14ad7b9704d"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/TObQ0HxZ/versions/x91l6OKB/mcef-forge-2.1.6-1.20.1.jar"
+      ],
+      "fileSize": 218417
+    },
+    {
+      "path": "mods/[WI变焦] WI-Zoom-1.5-MC1.20.1-Forge.jar",
+      "hashes": {
+        "sha1": "de100712cf2b7187a23f5cd726b93e576592979b",
+        "sha512": "923733806726c4cf34f0e9ba95db7745979d7aea79d27936f4def005882ad17b364316226915adc399895dfaf8e28866481fec358308b5b5228cbf46e8de2e3d"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/o7DitHWP/versions/lrZgFzcQ/WI-Zoom-1.5-MC1.20.1-Forge.jar"
+      ],
+      "fileSize": 141897
+    },
+    {
+      "path": "mods/[Xaero的世界地图] xaeroworldmap-forge-1.20.1-1.40.16.jar",
+      "hashes": {
+        "sha1": "3ebbd1aea9e55b746d168c0d3ac014bb5892db71",
+        "sha512": "7488d9a01f8d9dc24042caa183a5859a6e2dc111624740230bc76b290131477a5d1e26dc9d5c956ebf866939f4a4d19a856e6b3b1d1b96c52030952f44254dac"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/NcUtCpym/versions/5mJcHKn6/xaeroworldmap-forge-1.20.1-1.40.16.jar"
+      ],
+      "fileSize": 1389566
+    },
+    {
+      "path": "mods/[Xaero的小地图] xaerominimap-forge-1.20.1-25.3.12.jar",
+      "hashes": {
+        "sha1": "d71cc7dbd98b5100a671617656b3164030dc72d7",
+        "sha512": "268a26bbc229585d70a188b87a5113de08f121823860d1192a40918c854b8512406fec3730839b7a82911258c85ee8427287593b382cd8993d7c2b8da5208713"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/1bokaNcj/versions/PmyN0QwQ/xaerominimap-forge-1.20.1-25.3.12.jar"
+      ],
+      "fileSize": 2147212
+    },
+    {
+      "path": "mods/[一键背包整理Next] （111）（222）InventoryProfilesNext-forge-1.20-1.10.20.jar",
+      "hashes": {
+        "sha1": "979e74fa10b24a7d7c4d9aeb5824b80f4f9235cf",
+        "sha512": "8d2ecb06d6cebe56b1e55c1cf535bd4aefd8c1bd7642741435ea0c07a1073e275c40c6b2bfd9c3f2d8fd73b711422e4e2b5e39f84ae756028517715633ed5658"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/O7RBXm3n/versions/CrtAI3P9/InventoryProfilesNext-forge-1.20-1.10.20.jar"
+      ],
+      "fileSize": 1457354
+    },
+    {
+      "path": "mods/[内存泄漏修复] memoryleakfix-forge-1.17+-1.1.5.jar",
+      "hashes": {
+        "sha1": "9f60142dd94631800386a16a4ad70ad9e84cd78a",
+        "sha512": "f4d7b0eb70a605ffb81bebd24fd125d8c0bc7917c3e00f27bee64988836323de5a3d205e89a4a5f8ae75741ca874f62996e7c8e5ed489dc3c1824337e93d263f"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/NRjRiSSD/versions/3w0IxNtk/memoryleakfix-forge-1.17%2B-1.1.5.jar"
+      ],
+      "fileSize": 227925
+    },
+    {
+      "path": "mods/[农夫乐事] FarmersDelight-1.20.1-1.3.1.jar",
+      "hashes": {
+        "sha1": "7df4f6ae04e4a24488f388080fd3171476bc9c57",
+        "sha512": "f63a9249c320abbd7ecc5a888ded02449893e712e37b8b4e871abe183db5091c04bd05d5b8abd91b7c881c444ea2797e9def67a45dd9ba284f7ee65d0ce61371"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/R2OftAxM/versions/ugqnwJ4j/FarmersDelight-1.20.1-1.3.1.jar"
+      ],
+      "fileSize": 3275517
+    },
+    {
+      "path": "mods/[冰山] Iceberg-1.20.1-forge-1.1.25.jar",
+      "hashes": {
+        "sha1": "d551ff55814cfb01403b812459ee5a02b020d87b",
+        "sha512": "8612097a014fcd6343a092cfeddb0e9d57c5a665b9ac61603a7760d156abd048ac548db55e750b369700b0475661e554f4b92b44677edf07574d4f9ffa42558c"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/5faXoLqX/versions/BQ8rJPXV/Iceberg-1.20.1-forge-1.1.25.jar"
+      ],
+      "fileSize": 134551
+    },
+    {
+      "path": "mods/[动态 FPS] dynamic-fps-3.11.4+minecraft-1.20.0-forge.jar",
+      "hashes": {
+        "sha1": "43b3e0766a9e7a30651cc01756476657b865b7a2",
+        "sha512": "a8234d0c1b4c7a75c7b05b280a5a120dc090be2c252bf4235e34f53751aa74ea2c23614913f1fd7b43d4a841e96e178c8fd935a7630634316821139a056b3237"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/LQ3K71Q1/versions/EjdIWWqG/dynamic-fps-3.11.4%2Bminecraft-1.20.0-forge.jar"
+      ],
+      "fileSize": 402345
+    },
+    {
+      "path": "mods/[实体模型特性] entity_model_features_1.20.1-forge-3.2.2.jar",
+      "hashes": {
+        "sha1": "4590bb301f9575fa309fac7e13cea05045a0eccd",
+        "sha512": "9a754328a9557372fa1b9caac97e1a242f244f02dbbcd6b04b2a96b3cdc52f3e696700a597e31228ae4deefae5f8b63968a0b3a66cf5476be55702101e3547b7"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/4I1XuqiY/versions/lssOUOiA/entity_model_features_1.20.1-forge-3.2.2.jar"
+      ],
+      "fileSize": 750280
+    },
+    {
+      "path": "mods/[实体纹理特性] entity_texture_features_1.20.1-forge-7.1.jar",
+      "hashes": {
+        "sha1": "e13ba95a0388d7d5b1f479e5bd7e2df78e4c4a23",
+        "sha512": "0857b572a8695148f72eb9edc6218039ceeab8d11068fdfb567a5b1182232d7500ccccd75d6223b96ec5a5a1123910a6ebb1d9e8c8988d3cdb989797b9cc2228"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/BVzZfTc1/versions/GQlTHleX/entity_texture_features_1.20.1-forge-7.1.jar"
+      ],
+      "fileSize": 944851
+    },
+    {
+      "path": "mods/[应用能源2] appliedenergistics2-forge-15.4.10.jar",
+      "hashes": {
+        "sha1": "ac255a120499f79f8deade474da09e3c00ff9bad",
+        "sha512": "edc08a999b57e80426c737efa5b50c6d19ab40cb03f752bc26e2912fe12b989cefd5feff519ce0d87a4717a74c22a99242263ee4de63c1c84f91306d156134ee"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/XxWD5pD3/versions/7KVs6HMQ/appliedenergistics2-forge-15.4.10.jar"
+      ],
+      "fileSize": 8495956
+    },
+    {
+      "path": "mods/[我的世界铁路] MTR-forge-4.0.4+1.20.1.jar",
+      "hashes": {
+        "sha1": "61b11556da47dcbea6ad809b6cbb4f677a147274",
+        "sha512": "02aaad2f59b52b1e37fc345d587938079ee51d890799844fab56f7051f2943d01e538957c10393d796a947a380e5348b94fad9dbb432a92cdd9d92eb67e8b86a"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/XKPAmI6u/versions/9mQ07Jkk/MTR-forge-4.0.4%2B1.20.1.jar"
+      ],
+      "fileSize": 85240261
+    },
+    {
+      "path": "mods/[旅人标题] TravelersTitles-1.20-Forge-4.0.2.jar",
+      "hashes": {
+        "sha1": "64a435eaa6e08fff5af2c720c3b6a40fe292f2f7",
+        "sha512": "7cafbfc39305f3e384468db674e350118950201ba4d22b66ed95516a335aaad04765ae1e693b223c6c5beba404fc7411e9f78b4f962d7d9e51407b55233375a4"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/JtifUr64/versions/oUSK4sOQ/TravelersTitles-1.20-Forge-4.0.2.jar"
+      ],
+      "fileSize": 228191
+    },
+    {
+      "path": "mods/[机械动力] create-1.20.1-6.0.8.jar",
+      "hashes": {
+        "sha1": "b13d912b9247a38d66d11598c121442585a1c1e9",
+        "sha512": "5b51f5d31437d9bfbf221b67459abd87260d284874e1e23b7ed1d522b23a48059a3b1d2c1c541428da35dc6be15561b4f3c7f36aac6df3a0e8db6a278f6b0316"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/LNytGWDc/versions/8amzvn9x/create-1.20.1-6.0.8.jar"
+      ],
+      "fileSize": 19170905
+    },
+    {
+      "path": "mods/[机械动力：喷气背包] create_jetpack-forge-4.4.6.jar",
+      "hashes": {
+        "sha1": "066572eef380c5d3d34138110cf0c70c55c487bd",
+        "sha512": "a0536411e314a505938b2bbef80b9b1bfb504b29e04c1791ba87414060a60731ae29de6deb32e352ccf65e6c14a4675ed2ee4e4414afa526a559aa04e51fe606"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/UbFnAd4l/versions/Ft2vxKG4/create_jetpack-forge-4.4.6.jar"
+      ],
+      "fileSize": 638327
+    },
+    {
+      "path": "mods/[机械动力：筛子] createsifter-1.20.1-1.8.6-6.0.6.jar",
+      "hashes": {
+        "sha1": "392d21477c1bba6c47f2a5fced662875b016a09e",
+        "sha512": "5f1c795a1fd6f95dbeda490ddffc7cc8385908f19387dfab2d6919c582c9d18c6862d52fc893e6390cde3b5d7fba279ff223b4022df4a498783a7a2bedf74a53"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/r018adCw/versions/GlQRvUIe/createsifter-1.20.1-1.8.6-6.0.6.jar"
+      ],
+      "fileSize": 620951
+    },
+    {
+      "path": "mods/[极简血量显示] Neat-1.20.1-41-FORGE.jar",
+      "hashes": {
+        "sha1": "32fe1c807ac0c6aed8045260934f1ba6dc491361",
+        "sha512": "644529d6e0c11fd9d4d55090213649e5c12cc7f95aa3a180a2e4985012eb94ace058d112489474df0217309db08741729fe58989494c2aebbceb6f33d5161959"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/Ins7SzzR/versions/7lL1qFg0/Neat-1.20.1-41-FORGE.jar"
+      ],
+      "fileSize": 30595
+    },
+    {
+      "path": "mods/[框架方块] FramedBlocks-9.4.3.jar",
+      "hashes": {
+        "sha1": "740c0feaab75455f32df7e137389f77c83fb490c",
+        "sha512": "19a098bbf9ee7ee39f6b785bbce5f87b9dca58a491fa16eba2f38cfa106f37ee90c1ce56686a50adef8f5d3086e3c22a6127ed02bdf3f80d57297c8f7c1b49fc"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/wbgfS34j/versions/lSiHA1qU/FramedBlocks-9.4.3.jar"
+      ],
+      "fileSize": 4251314
+    },
+    {
+      "path": "mods/[永恒枪械工坊：零] tacz-1.20.1-1.1.7-hotfix2.jar",
+      "hashes": {
+        "sha1": "cb84817b83025fa93d380e87de655e57a607ced8",
+        "sha512": "1e174634668f031b591885275b0a8b7007ec6747faf4156fc8e3044a4ab7c21930eb19542cc647eedcf4d089e92938e243cf802380d4deb5010235bfd7389f0d"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/SzzJttH8/versions/3NpuJ7TJ/tacz-1.20.1-1.1.7-hotfix2.jar"
+      ],
+      "fileSize": 52426062
+    },
+    {
+      "path": "mods/[沉浸式飞机] immersive_aircraft-1.4.0+1.20.1-forge.jar",
+      "hashes": {
+        "sha1": "64e6c792c5208005ee6b099e8fb7d2738873737d",
+        "sha512": "c89ce2ec78ced38c71b0bb022db0a3218556b5479e148a3f751c40456a79fb18799a3f1233e3be03bc18754d5fe1db2dd16f2bd826396a4c777e4e1acaa9fe76"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/x3HZvrj6/versions/jPZ0GRsN/immersive_aircraft-1.4.0%2B1.20.1-forge.jar"
+      ],
+      "fileSize": 2428368
+    },
+    {
+      "path": "mods/[沉浸画框] immersive_paintings-0.6.11+1.20.1-forge.jar",
+      "hashes": {
+        "sha1": "99ffd1b03beb8a0ef362baf89cc25cc5c24afe14",
+        "sha512": "084a035359e34ea87813548c608535ab845b34aff86a188a02bde5e812f9084c7d3fb30f3548d63e52de98c91b2c4b5594471212e4a0a38ad85086c477bdfd97"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/6txNkua3/versions/r5DnOj44/immersive_paintings-0.6.11%2B1.20.1-forge.jar"
+      ],
+      "fileSize": 4855090
+    },
+    {
+      "path": "mods/[沉浸车辆] Immersive Vehicles-1.20.1-24.0.0.jar",
+      "hashes": {
+        "sha1": "efe6962bf0304eb7ac234daa75551bf8e30ef3b7",
+        "sha512": "9f5acbef86883347a9a14f28efdbff29e8817e131bf2ef99897a90842f169dbd4a9428d35480fded1d8a5f0e4931d5711877244782d5cab59b5cbd903a960199"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/BCzBuhJ5/versions/xBHmZvmC/Immersive%20Vehicles-1.20.1-24.0.0.jar"
+      ],
+      "fileSize": 6254897
+    },
+    {
+      "path": "mods/[物品边框] ItemBorders-1.20.1-forge-1.2.2.jar",
+      "hashes": {
+        "sha1": "cf42466689489348e1e3a5df00d2ce6c65dd978a",
+        "sha512": "9822eaa5debee8b8a67c185fec2f03f4a5bf25513cb4ef3567266dab44280564050ebcf730b43782e1f12a4d6e19668bdedb60279c1b53925ccbed5b6680ba3b"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/b1fMg6sH/versions/JUW31p4D/ItemBorders-1.20.1-forge-1.2.2.jar"
+      ],
+      "fileSize": 20832
+    },
+    {
+      "path": "mods/[物品高亮] Highlighter-1.20.1-forge-1.1.9.jar",
+      "hashes": {
+        "sha1": "644dc33b1745ad100f513b4d169ace86fff3b2bf",
+        "sha512": "a8b9e114281c1390ecded38a6114516dc0b3ae0e4cb0f041162d54b6cabfacf077c7394075c43c1565a01362cdbf37e45c3bdeac2aa5b8dede93970bafd44c65"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/cVNW5lr6/versions/rcQOLnyI/Highlighter-1.20.1-forge-1.1.9.jar"
+      ],
+      "fileSize": 29438
+    },
+    {
+      "path": "mods/[现代化 UI] ModernUI-Forge-1.20.1-3.12.0.1-universal.jar",
+      "hashes": {
+        "sha1": "fcebe51e3c2ca34793f9b132fa05b5494ffc76a4",
+        "sha512": "cf9a1bfa25f956a9277639da833a86d59a6a55bc690b6c03d4292bb240cb775c32ecf7ae253db7779757e2c74c5adf2c272c4ecdb35b907027de3ec7534bbd27"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/3sjzyvGR/versions/6ksT8CWg/ModernUI-Forge-1.20.1-3.12.0.1-universal.jar"
+      ],
+      "fileSize": 25104473
+    },
+    {
+      "path": "mods/[硬核复活前置]balm-forge-1.20.1-7.3.38-all.jar",
+      "hashes": {
+        "sha1": "c689f4cbe1a5250177aced15b66ca251d9476d35",
+        "sha512": "7b7e100a9de75750e402ecc1e2d1c88bf2f16fa1cf095656d87918d37a0472f163b0c6242c68b38285410513ff6a66b31c5620139c2901e7b235657027c71f50"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/MBAkmtvl/versions/8rz04Kha/balm-forge-1.20.1-7.3.38-all.jar"
+      ],
+      "fileSize": 591398
+    },
+    {
+      "path": "mods/[精妙核心：背包等前置] sophisticatedcore-1.20.1-1.3.33.1837.jar",
+      "hashes": {
+        "sha1": "8e315ded07cd41dd7256d5b107afb38aa6492752",
+        "sha512": "4bb55fedb546381e3d8dc371ebf2b7772d41d15e9e6f7ee8a8c735879b2f581d3115192643ea669173b0f8167f67cf6d90ced74a7ff92fd844e9249a015f8d5f"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/nmoqTijg/versions/zhogVLrD/sophisticatedcore-1.20.1-1.3.33.1837.jar"
+      ],
+      "fileSize": 1473429
+    },
+    {
+      "path": "mods/[精妙背包] sophisticatedbackpacks-1.20.1-3.24.38.1738.jar",
+      "hashes": {
+        "sha1": "a5a2dc5ee091066d15af51e0ed6fb0ea2c628d8f",
+        "sha512": "3ee8a58c54009a4a21e1c655348798946ab2e003890473e57c96bc0bee463f73b762ad3191b249503ba7ae1cdd8b2754b49778921d73072f1caeb5cd6e8aa785"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/TyCTlI4b/versions/kvMThjUY/sophisticatedbackpacks-1.20.1-3.24.38.1738.jar"
+      ],
+      "fileSize": 1019019
+    },
+    {
+      "path": "mods/[红石计划] ProjectRed-1.20.1-4.21.0-core.jar",
+      "hashes": {
+        "sha1": "3c7a62527958c199fb30a08b37f1a634dfb6a715",
+        "sha512": "62a473831234f860216e2dc8195f89f5ffe3725a20017e8e45be0b2904199be7ff8f51cd4e4fb598eadd89b97021a4bc994b354fe3781009b44f111b12062eeb"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/zIlxygxr/versions/jhpBRUqn/ProjectRed-1.20.1-4.21.0-core.jar"
+      ],
+      "fileSize": 806997
+    },
+    {
+      "path": "mods/[红石计划：照明] ProjectRed-1.20.1-4.21.0-illumination.jar",
+      "hashes": {
+        "sha1": "a1818c65f001d2dd7bfb16fab3c8c94c9abb0fbb",
+        "sha512": "dcd8d38bd936496d922fe440d4262f5cfadb335ae0bc531f8b60e659312388f9fda0f835bd2ba12c3dec0b9eb151362dc3e06be67a383f7922af0df5d6ce6e2a"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/9a4Zqq1k/versions/gY5ES9Az/ProjectRed-1.20.1-4.21.0-illumination.jar"
+      ],
+      "fileSize": 771005
+    },
+    {
+      "path": "mods/[网络音乐机] netmusic-1.5.1-forge+mc1.20.1.jar",
+      "hashes": {
+        "sha1": "3eb61632187ab7d798252396958b4ee1c4783257",
+        "sha512": "176153c7ff4886350ebbf852820495e157e56ef56d813d0457c393b8b6e2689412df7486219510878f821a18b0c30ddb4c92bfa3b435227d9f7fd9dc9edd290f"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/gKNuqaQq/versions/PDAxPE1Z/netmusic-1.5.1-forge%2Bmc1.20.1.jar"
+      ],
+      "fileSize": 1472028
+    },
+    {
+      "path": "mods/[苹果皮] appleskin-forge-mc1.20.1-2.5.1.jar",
+      "hashes": {
+        "sha1": "81919356f84eab14258db98924b66c3c38e372b1",
+        "sha512": "3176f928fb6c60d27f5edb610ca4ab0236175404eebf32797a1ec6cdd794bb294a260231579578536d03571377e43c6181adc75d8dd2c0733f17fce4f7e636b9"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/EsAfCjCV/versions/XdXDExVF/appleskin-forge-mc1.20.1-2.5.1.jar"
+      ],
+      "fileSize": 47428
+    },
+    {
+      "path": "mods/[表情工艺] emotecraft-for-MC1.20.1-2.2.7-b.build.50-forge.jar",
+      "hashes": {
+        "sha1": "fcff067375cfe917cbf235218f49ceb58e598a5c",
+        "sha512": "46ac9c5260232edd24f16d1724fe1acd0690f448927ba888add9d3a7a3a24fc6bec91ff171686ef7feb49f8ded40f9c7a53b25559ea8e9c60133dfdafde89e89"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/pZ2wrerK/versions/2f5mEUPY/emotecraft-for-MC1.20.1-2.2.7-b.build.50-forge.jar"
+      ],
+      "fileSize": 680255
+    },
+    {
+      "path": "mods/[输入法冲突修复] IMBlocker-5.5.3-forge+1.17-1.20.4.jar",
+      "hashes": {
+        "sha1": "a7453ae86794bb6247ea0d46fd8711be896d6223",
+        "sha512": "21c75b8da83cca8ae7e7a58784318f6043b986e9b3f58d4f6a8072f827c6c088dafbfaf82b0a27e71f46e98226009d4ff93e19813b5e70f7fdf8bd65c895b1f9"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/WMDesFsZ/versions/2kdnDPqG/IMBlocker-5.5.3-forge%2B1.17-1.20.4.jar"
+      ],
+      "fileSize": 202088
+    },
+    {
+      "path": "mods/[通用拼音搜索] jecharacters-1.20.1-forge-4.6.3.jar",
+      "hashes": {
+        "sha1": "049b538f963c908d2c808cb8d4edc6594403d7ac",
+        "sha512": "9a5fda095290648c4326a64b25405a20e81b208366ca41031ff5c704362a821c3455b7b67f5b1a6ebd3169aa814ead6f5f8d6357949cb36c4f9324636a31144a"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/I7k4B65h/versions/nD9L5E2v/jecharacters-1.20.1-forge-4.6.3.jar"
+      ],
+      "fileSize": 267125
+    },
+    {
+      "path": "mods/[铁氧体磁芯] ferritecore-6.0.1-forge.jar",
+      "hashes": {
+        "sha1": "417fb6ce8f52abf40bd9d0390371790f9576f8ba",
+        "sha512": "a1960a7c03dc32d4ccaccaf28afdd9b078758bbd62d15a91d4039a83fa9397a098e89b69591f6bd5190254d9ee97e502504154b9aec764adb8c65f000b75ba2c"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/uXXizFIs/versions/DG5Fn9Sz/ferritecore-6.0.1-forge.jar"
+      ],
+      "fileSize": 123034
+    },
+    {
+      "path": "mods/[镭] radium-mc1.20.1-0.12.4+git.26c9d8e.jar",
+      "hashes": {
+        "sha1": "f5f5f792473bb7b85ec221f75c5afb3740afb13a",
+        "sha512": "7b59c491d72801257c740626faab8c14ed580db28493c474147341531bca3de5ea822d4042d3786ae619449b6f6ffc1001a1cdc1b9276ec900e57ab17dd8989a"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/2gvRmQXx/versions/n947JjJH/radium-mc1.20.1-0.12.4%2Bgit.26c9d8e.jar"
+      ],
+      "fileSize": 713454
+    },
+    {
+      "path": "mods/[鼠标手势] MouseTweaks-forge-mc1.20.1-2.25.1.jar",
+      "hashes": {
+        "sha1": "d751153e722a4e014691c83f39f5b07c6ec5333c",
+        "sha512": "a3bb0272c0a1a3be9250dfee030bb8f86217fa6a32bd534be8c940fdd8c466c800c2df85874877983ced36ecfc28c8ced6c0d42107c1ab621385b4be9a7c65eb"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/aC3cM3Vq/versions/7JVXOe3K/MouseTweaks-forge-mc1.20.1-2.25.1.jar"
+      ],
+      "fileSize": 76237
+    },
+    {
+      "path": "resourcepacks/Dramatic Skys Demo 1.5.3.36.1.zip",
+      "hashes": {
+        "sha1": "6c794ea9f26424cb337a15038dfa5540ecc85d7f",
+        "sha512": "35a0a2db172b270acc1aa118cefd65c00377ee11a111882c31eacacc3f1af80dddb757d993ebd9c1763b37d39fbe47964c1b7e122e759a57c9d1872ce4317340"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/2YyNMled/versions/oZC4fRwa/Dramatic%20Skys%20Demo%201.5.3.36.1.zip"
+      ],
+      "fileSize": 11383498
+    },
+    {
+      "path": "resourcepacks/FreshAnimations_v1.10.1.zip",
+      "hashes": {
+        "sha1": "7747988f7cd47f5e46dbec54474126223ec95a47",
+        "sha512": "f5bf17c74afbe9acda9f0b7ad177fa28218077bec286cf04e465ff83b84d7e21fe53d15e8ceea4d2b358521dda2007417394b33ac8737fdc5c91ffcbcb715994"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/50dA9Sha/versions/EkWu7smn/FreshAnimations_v1.10.1.zip"
+      ],
+      "fileSize": 815824
+    },
+    {
+      "path": "resourcepacks/[发光矿石]NewGlowingOres§6[BV-1.3][1.20].zip",
+      "hashes": {
+        "sha1": "5386de443f769021ac09e7be77f04faf4198b7bf",
+        "sha512": "18e9120612d0ae0882666d913774313abd0c3d4d0b932f53c231da67ef5d5687974865c438e0aa9c344548bb6338f95813917d6b76b1d509ebdf993de70290c0"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/oL18adaQ/versions/YoXl9tp0/NewGlowingOres%C2%A76%5BBV-1.3%5D%5B1.20%5D.zip"
+      ],
+      "fileSize": 212005
+    },
+    {
+      "path": "resourcepacks/§cCozyUI§b+ §7v1.10§c no-fonts §0.zip",
+      "hashes": {
+        "sha1": "b149b40507572ce3f2def323dc0941637911af05",
+        "sha512": "c963afc7ea94dfe2790511eba0bb2e56d0df9ab97aad92d31df65d0f71e10fab9b247ee7c13055845462f170d318dd53068659d3e5f8446461d7401296115656"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/G5rf50k2/versions/MxAqLsiR/%C2%A7cCozyUI%C2%A7b%2B%20%C2%A77v1.10%C2%A7c%20no-fonts%20%C2%A70.zip"
+      ],
+      "fileSize": 15138127
+    },
+    {
+      "path": "shaderpacks/[推荐]ComplementaryReimagined_r5.5.1.zip",
+      "hashes": {
+        "sha1": "c9f1724fbe77e1d36afab9612b4aaac693bc84e4",
+        "sha512": "e3168c3e8b9a59e70dbc7dd27931d8b245e5b16b093c87f1dccd01edc3a8be0fb14153fe8175e822ea6463ac0d715de377d186455580915c6f9d98c02b39194f"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/HVnmMxH1/versions/sAAjYvFB/ComplementaryReimagined_r5.5.1.zip"
+      ],
+      "fileSize": 456328
+    },
+    {
+      "path": "mods/[AE2扩展] ExtendedAE-1.20-1.4.15-forge.jar",
+      "hashes": {
+        "sha1": "27ba7cc836c6c8df914160ac9ed04538519feb21",
+        "sha512": ""
+      },
+      "downloads": [
+        "https://edge.forgecdn.net/files/7986/603/ExtendedAE-1.20-1.4.15-forge.jar"
+      ],
+      "fileSize": 2949701
+    },
+    {
+      "path": "mods/[传送石碑／指路石] waystones-forge-1.20.1-14.1.20.jar",
+      "hashes": {
+        "sha1": "68b61bc66dafc14b505de589b3e751771a9c15aa",
+        "sha512": "ea9970aeec627f37806eb316dfdc5aa2c38a6cd30479997c451d7642407d1bd308f6e9b02d1cc82c777a89531aada805bfb54f4a8889f77c5eb00ed972f92c0c"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/LOpKHB2A/versions/sKoHLGbK/waystones-forge-1.20.1-14.1.20.jar"
+      ],
+      "fileSize": 533739
+    },
+    {
+      "path": "mods/[工作台性能优化] FastWorkbench-1.20.1-8.0.4.jar",
+      "hashes": {
+        "sha1": "1a322a85e7c7024b8a0715c12d27b5ed0930d729",
+        "sha512": "c30dccece03fa9fa8de7bf0ec3b4988e7b2b0c214b5ab2142f13bcdced89c4ca8509244b9767df0903d55776ae2ada29b483af8dec649339b3f0c687ea18df76"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/5NYPwQRn/versions/ymC5ORfn/FastWorkbench-1.20.1-8.0.4.jar"
+      ],
+      "fileSize": 28188
+    },
+    {
+      "path": "mods/[熔炉性能优化] FastFurnace-1.20.1-8.0.2.jar",
+      "hashes": {
+        "sha1": "b144b8599acd3fac3f8f9d31fa217a4a5b942f61",
+        "sha512": "4f11c4871ba88d10c07a295b84632e97ce417489c091c69873bc749dd11947413e907a55125e1529bd3a7a859dd8b8ba44857693fbbef74154ff14fb8d3d1c2e"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/9X0318ev/versions/EYjcGdw1/FastFurnace-1.20.1-8.0.2.jar"
+      ],
+      "fileSize": 6170
+    },
+    {
+      "path": "mods/[简单的语音聊天] voicechat-forge-1.20.1-2.6.17.jar",
+      "hashes": {
+        "sha1": "994e4048b2309f05f3a5e67f6e933b14b86b1a22",
+        "sha512": ""
+      },
+      "downloads": [
+        "https://edge.forgecdn.net/files/8037/661/voicechat-forge-1.20.1-2.6.17.jar"
+      ],
+      "fileSize": 4903246
+    },
+    {
+      "path": "mods/[经验机制改革] Clumps-forge-1.20.1-12.0.0.4.jar",
+      "hashes": {
+        "sha1": "a20cfe0b0ee0b897887f81c4919af9d220ba22e7",
+        "sha512": "2235d29b1239d5526035bffd547d35fe33b9e737d3e75cd341f6689d9cd834d0a7dc03ed80748772162cd9595ba08e7a0ab51221bc145a8fd979d596c3967544"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/Wnxd13zP/versions/hefSwtn6/Clumps-fabric-1.20.1-12.0.0.4.jar"
+      ],
+      "fileSize": 21987
+    },
+    {
+      "path": "mods/[连锁破坏] ftb-ultimine-forge-2001.1.8.jar",
+      "hashes": {
+        "sha1": "c2a1eb72c36ad067faafbff4e1618c4db906de74",
+        "sha512": ""
+      },
+      "downloads": [
+        "https://edge.forgecdn.net/files/7880/472/ftb-ultimine-forge-2001.1.8.jar"
+      ],
+      "fileSize": 129653
+    },
+    {
+      "path": "mods/AE2_generators-0.2.0-beta-forge-1.20.1.jar",
+      "hashes": {
+        "sha1": "2a56cb5994edd7a3b369fc3ebc4825c486f0a49c",
+        "sha512": ""
+      },
+      "downloads": [
+        "https://edge.forgecdn.net/files/5658/49/AE2_generators-0.2.0-beta-forge-1.20.1.jar"
+      ],
+      "fileSize": 197717
+    },
+    {
+      "path": "mods/FastFurnace-1.20.1-8.0.2.jar",
+      "hashes": {
+        "sha1": "b144b8599acd3fac3f8f9d31fa217a4a5b942f61",
+        "sha512": "4f11c4871ba88d10c07a295b84632e97ce417489c091c69873bc749dd11947413e907a55125e1529bd3a7a859dd8b8ba44857693fbbef74154ff14fb8d3d1c2e"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/9X0318ev/versions/EYjcGdw1/FastFurnace-1.20.1-8.0.2.jar"
+      ],
+      "fileSize": 6170
+    },
+    {
+      "path": "mods/FastWorkbench-1.20.1-8.0.4.jar",
+      "hashes": {
+        "sha1": "1a322a85e7c7024b8a0715c12d27b5ed0930d729",
+        "sha512": "c30dccece03fa9fa8de7bf0ec3b4988e7b2b0c214b5ab2142f13bcdced89c4ca8509244b9767df0903d55776ae2ada29b483af8dec649339b3f0c687ea18df76"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/5NYPwQRn/versions/ymC5ORfn/FastWorkbench-1.20.1-8.0.4.jar"
+      ],
+      "fileSize": 28188
+    },
+    {
+      "path": "mods/ftb-library-forge-2001.2.12.jar",
+      "hashes": {
+        "sha1": "7f36ec4af42ad1d69872c58022e93a9d1b9c82b7",
+        "sha512": ""
+      },
+      "downloads": [
+        "https://edge.forgecdn.net/files/7296/748/ftb-library-forge-2001.2.12.jar"
+      ],
+      "fileSize": 780523
+    },
+    {
+      "path": "mods/Landk_furniture_v1.4_1.20.1_x512_3d_rx.jar",
+      "hashes": {
+        "sha1": "23fa06baf6641d3b96afab11fddec13666e0ed38",
+        "sha512": ""
+      },
+      "downloads": [
+        "https://edge.forgecdn.net/files/4952/944/Landk_furniture_v1.4_1.20.1_x512_3d_rx.jar"
+      ],
+      "fileSize": 126946560
+    },
+    {
+      "path": "mods/ocs-1.0.jar",
+      "hashes": {
+        "sha1": "1891b2925ff7ffbd73cef6c7998122c9beb4a1aa",
+        "sha512": ""
+      },
+      "downloads": [
+        "https://edge.forgecdn.net/files/6831/46/ocs-1.0.jar"
+      ],
+      "fileSize": 21636
+    },
+    {
+      "path": "mods/Placebo-1.20.1-8.6.1.jar",
+      "hashes": {
+        "sha1": "df3170bd94639d6cd49eded3a4faacac953aeaf8",
+        "sha512": ""
+      },
+      "downloads": [
+        "https://edge.forgecdn.net/files/5098/182/Placebo-1.20.1-8.6.1.jar"
+      ],
+      "fileSize": 285463
+    },
+    {
+      "path": "mods/rhenium-1.0.0+forge.jar",
+      "hashes": {
+        "sha1": "762f49083beb0965fc0eccf206896402a7175627",
+        "sha512": "b84137076bff9de8febeefcbc86579fcaf2911014c6b1530e4eb8ad5a0037b2cf4296bb98db9352e16da4ed55bedf6c799d59afa8f1cb48e211e5d553e72c407"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/WL6VdmR4/versions/ZC2AUGvX/rhenium-1.0.0%2Bmc1.21.11.jar"
+      ],
+      "fileSize": 10069
+    },
+    {
+      "path": "mods/shipwreckfix-1.20.1-1.0-SNAPSHOT.jar",
+      "hashes": {
+        "sha1": "7226b65e34c5847e84d9bbf1807ed75ca8128f96",
+        "sha512": ""
+      },
+      "downloads": [
+        "https://edge.forgecdn.net/files/6174/347/shipwreckfix-1.20.1-1.0-SNAPSHOT.jar"
+      ],
+      "fileSize": 11848
+    },
+    {
+      "path": "mods/smsn-forge-1.3.6-1.20.1.jar",
+      "hashes": {
+        "sha1": "7dc1697c65772d44a438130e98474cfcd7a94c09",
+        "sha512": ""
+      },
+      "downloads": [
+        "https://edge.forgecdn.net/files/7399/448/smsn-forge-1.3.6-1.20.1.jar"
+      ],
+      "fileSize": 121707
+    },
+    {
+      "path": "mods/star_optimized-1.2.jar",
+      "hashes": {
+        "sha1": "bd2eaf8e7fa8a558710410b597f498e13953c40a",
+        "sha512": ""
+      },
+      "downloads": [
+        "https://edge.forgecdn.net/files/7139/719/star_optimized-1.2.jar"
+      ],
+      "fileSize": 144499
+    }
+  ],
+  "dependencies": {
+    "minecraft": "1.20.1",
+    "forge": "47.4.0"
+  }
+}
