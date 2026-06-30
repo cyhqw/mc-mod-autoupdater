@@ -10,7 +10,7 @@ public final class Constants {
 
     public static final String MOD_ID = "mcmodupdater";
     public static final String MOD_NAME = "MC Mod Auto-Updater";
-    public static final String MOD_VERSION = "0.3.0";
+    public static final String MOD_VERSION = "0.4.0";
 
     /** 配置文件相对路径（位于游戏目录下）。 */
     public static final String CONFIG_PATH = "config/mcmodupdater/mcmodupdater.properties";

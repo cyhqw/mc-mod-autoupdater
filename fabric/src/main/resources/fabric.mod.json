@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "id": "mcmodupdater",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "name": "MC Mod Auto-Updater",
-  "description": "Client-only mod: fetches a Modrinth modpack index (modrinth.index.json) from a URL, shows a Swing dialog before game load, syncs mods if a new version is detected.",
+  "description": "Minecraft 客户端模组自动更新器。启动时拉取 Modrinth 整合包清单，弹窗显示差异并同步 mods 目录。",
   "authors": [
     "cyhqw"
   ],
@@ -13,7 +13,6 @@
     "issues": "https://github.com/cyhqw/mc-mod-autoupdater/issues"
   },
   "license": "MIT",
-  "icon": "assets/mcmodupdater/icon.png",
   "environment": "client",
   "entrypoints": {
     "main": [
@@ -24,5 +23,8 @@
     "fabricloader": ">=0.15.0",
     "minecraft": "~1.20.1",
     "java": ">=17"
+  },
+  "recommends": {
+    "fabric-api": "*"
   }
 }
