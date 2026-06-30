@@ -52,7 +52,7 @@ MODRINTH_API = "https://api.modrinth.com/v2"
 CURSEFORGE_API = "https://api.curseforge.com/v1"
 # CurseForge API key — 用户可在环境变量 CURSEFORGE_API_KEY 中覆盖
 DEFAULT_CURSEFORGE_API_KEY = "$2a$10$0N4gkNXNyKbt42tGVLeSI.B.WZXK5c8bZhHalbH54LT9UAskU03LK"
-USER_AGENT = "mc-mod-autoupdater-scanner/0.5.0 (https://github.com/cyhqw/mc-mod-autoupdater)"
+USER_AGENT = "mc-mod-autoupdater-scanner/0.6.0 (https://github.com/cyhqw/mc-mod-autoupdater)"
 HTTP_TIMEOUT = 20  # seconds
 MAX_RETRIES = 2
 
@@ -190,18 +190,27 @@ def cf_get_mod_files(mod_id: int, game_version: str = "", mod_loader_type: int =
 
     mod_loader_type: 1=Forge, 4=Fabric, 5=Quilt, 6=NeoForge
     """
-    url = f"{CURSEFORGE_API}/mods/{mod_id}/files"
-    params = []
+    params = ["pageSize=50"]
     if game_version:
         params.append(f"gameVersion={urllib.parse.quote(game_version)}")
     if mod_loader_type:
         params.append(f"modLoaderType={mod_loader_type}")
-    if params:
-        url += "?" + "&".join(params)
-    data = cf_http_get_json(url)
-    if data is None:
-        return []
-    return data.get("data", []) or []
+    files: List[Dict[str, Any]] = []
+    # CurseForge 默认分页较小；只取第一页会导致“项目有，但文件找不到”。
+    # 通常目标 MC 版本 + loader 过滤后页数很少，最多翻 6 页避免异常项目拖慢扫描。
+    for index in range(0, 300, 50):
+        page_params = params + [f"index={index}"]
+        url = f"{CURSEFORGE_API}/mods/{mod_id}/files?" + "&".join(page_params)
+        data = cf_http_get_json(url)
+        if data is None:
+            break
+        batch = data.get("data", []) or []
+        files.extend(batch)
+        pagination = data.get("pagination") or {}
+        total = int(pagination.get("totalCount") or 0)
+        if len(batch) < 50 or (total and len(files) >= total):
+            break
+    return files
 
 
 def cf_search_by_slug(slug: str) -> Optional[Dict[str, Any]]:
@@ -235,6 +244,110 @@ def cf_search_by_query(query: str, limit: int = 5) -> List[Dict[str, Any]]:
     if data is None:
         return []
     return data.get("data", []) or []
+
+
+def jar_murmur2_fingerprint(path: Path) -> int:
+    """
+    计算 CurseForge 指纹（MurmurHash2, 32-bit）。
+
+    CurseForge 的 fingerprints 接口按 jar 内容匹配，比 slug/searchFilter 更可靠：
+    即使用户把文件改名、加中文前缀或搜索关键词不准，也能直接命中对应文件。
+    计算前需要移除 ASCII 空白字节，这是 CurseForge 客户端的约定。
+    """
+    data = bytearray()
+    whitespace = {9, 10, 13, 32}
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            data.extend(b for b in chunk if b not in whitespace)
+
+    seed = 1
+    m = 0x5BD1E995
+    r = 24
+    length = len(data)
+    h = (seed ^ length) & 0xFFFFFFFF
+    rounded_end = length & 0xFFFFFFFC
+
+    for i in range(0, rounded_end, 4):
+        k = (
+            data[i]
+            | (data[i + 1] << 8)
+            | (data[i + 2] << 16)
+            | (data[i + 3] << 24)
+        )
+        k = (k * m) & 0xFFFFFFFF
+        k ^= (k >> r)
+        k = (k * m) & 0xFFFFFFFF
+        h = (h * m) & 0xFFFFFFFF
+        h ^= k
+
+    remaining = length & 3
+    if remaining == 3:
+        h ^= data[rounded_end + 2] << 16
+    if remaining >= 2:
+        h ^= data[rounded_end + 1] << 8
+    if remaining >= 1:
+        h ^= data[rounded_end]
+        h = (h * m) & 0xFFFFFFFF
+
+    h ^= (h >> 13)
+    h = (h * m) & 0xFFFFFFFF
+    h ^= (h >> 15)
+    return h & 0xFFFFFFFF
+
+
+def cf_get_file_by_fingerprint(fingerprint: int) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """用 CurseForge fingerprints 接口按内容精确查找文件。"""
+    url = f"{CURSEFORGE_API}/fingerprints"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps({"fingerprints": [fingerprint]}).encode(),
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "x-api-key": get_cf_api_key(),
+        },
+    )
+    last_err: Optional[Exception] = None
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+                body = resp.read().decode("utf-8")
+                data = json.loads(body)
+            exact = ((data.get("data") or {}).get("exactMatches") or [])
+            if not exact:
+                return None, None
+            match = exact[0]
+            return match.get("file"), match.get("latestFiles", [{}])[0] if match.get("latestFiles") else None
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None, None
+            last_err = e
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            last_err = e
+        if attempt < MAX_RETRIES:
+            time.sleep(0.5 * (2 ** attempt))
+    raise RuntimeError(f"CF fingerprint lookup failed: {last_err}")
+
+
+def score_cf_candidate(candidate: Dict[str, Any], parsed: Dict[str, str]) -> int:
+    """给 CurseForge 搜索候选打分，避免 searchFilter 总是取第一个误匹配。"""
+    slug_norm = normalize_name(candidate.get("slug", ""))
+    name_norm = normalize_name(candidate.get("name", ""))
+    variants = [normalize_name(v) for v in parsed.get("name_variants", [])]
+    score = 0
+    for v in variants:
+        if not v:
+            continue
+        if v == slug_norm:
+            score = max(score, 100)
+        elif v == name_norm:
+            score = max(score, 90)
+        elif slug_norm and (v in slug_norm or slug_norm in v):
+            score = max(score, 70)
+        elif name_norm and (v in name_norm or name_norm in v):
+            score = max(score, 60)
+    return score
 
 
 def cf_find_mod_id(parsed: Dict[str, str]) -> Tuple[Optional[int], str, str]:
@@ -293,9 +406,11 @@ def cf_find_mod_id(parsed: Dict[str, str]) -> Tuple[Optional[int], str, str]:
         if not query:
             continue
         try:
-            results = cf_search_by_query(query, limit=3)
+            results = cf_search_by_query(query, limit=8)
             if results:
-                m = results[0]
+                m = max(results, key=lambda item: score_cf_candidate(item, parsed))
+                if score_cf_candidate(m, parsed) < 60:
+                    continue
                 return m.get("id"), m.get("slug", ""), m.get("name", "")
         except Exception:
             pass
@@ -311,9 +426,11 @@ def cf_find_mod_id(parsed: Dict[str, str]) -> Tuple[Optional[int], str, str]:
             first_token = tokens[0]
             if len(first_token) >= 3:  # 避免太短的 token
                 try:
-                    results = cf_search_by_query(first_token, limit=3)
+                    results = cf_search_by_query(first_token, limit=8)
                     if results:
-                        m = results[0]
+                        m = max(results, key=lambda item: score_cf_candidate(item, parsed))
+                        if score_cf_candidate(m, parsed) < 40:
+                            return None, "", ""
                         return m.get("id"), m.get("slug", ""), m.get("name", "")
                 except Exception:
                     pass
@@ -478,11 +595,10 @@ def find_file_in_version(version: Dict[str, Any], sha1_hash: str) -> Optional[Di
 # ---------------------------------------------------------------------------
 
 # 用于从文件名中识别 MC 版本的正则：
-#   严格匹配 1.20, 1.20.1, 1.20.2, 1.20.3, 1.20.4, 1.20.5, 1.20.6
-#   也支持 mc1.20.1 前缀写法
-# 不匹配 1.10.3, 1.0, 1.4.15 等（这些是 mod 版本）
+#   匹配常见现代版本 1.7+ / mc1.7+ 形式，避免把 1.4.15 这类 mod 版本误判为 MC 版本，
+#   同时避免只支持 1.20.x 导致其它 MC 版本搜索失败。
 MC_VERSION_RE = re.compile(
-    r"^(?:mc)?1\.20(?:\.\d)?$",
+    r"^(?:mc)?1\.(?:[7-9]|[1-9]\d)(?:\.\d+)?$",
     re.IGNORECASE,
 )
 # 普通 mod 版本号：以数字开头 或 v+数字 开头
@@ -888,9 +1004,11 @@ def build_file_entry(
     策略:
       1. SHA1 反查 Modrinth version_file → 命中即用
       2. Modrinth 文件名搜索回退 (filename_exact / name_and_version / version_fallback_to_latest)
-      3. CurseForge 回退 (仅当 enable_curseforge=True 且 cf_modids 提供了 slug→modId 映射):
-         a) 按 slug 查 CF /mods/{modId}/files，找文件名完全匹配 → 用 CF URL+SHA1
-         b) 找不到文件名匹配 → missing (reason=on_curseforge_but_no_matching_file)
+      3. CurseForge 回退:
+         a) 优先用 jar 内容指纹查 /fingerprints（不依赖文件名，最可靠）
+         b) 指纹未命中时，用 cf-modids 映射或搜索 API 找 modId
+         c) 按 modId 分页拉取 files，找文件名完全匹配 → 用 CF URL+SHA1
+         d) 找不到文件名匹配 → missing (reason=on_curseforge_but_no_matching_file)
       4. 完全未找到 → missing (reason=not_found_on_modrinth_or_curseforge)
     """
     try:
@@ -1017,7 +1135,45 @@ def build_file_entry(
         cf_matched_slug = ""
         cf_matched_name = ""
 
-        # 3a. 优先用 cf-modids.txt 映射（如果提供了）
+        # 3a. 内容指纹精确匹配。这个路径不依赖文件名/slug，是解决
+        # “CurseForge 明明有但搜索不到”的最可靠方式。
+        try:
+            fingerprint = jar_murmur2_fingerprint(jar)
+            cf_file, _ = cf_get_file_by_fingerprint(fingerprint)
+        except Exception as e:
+            sys.stderr.write(f"[WARN] CF fingerprint lookup failed for {jar.name}: {e}\n")
+            cf_file = None
+
+        if cf_file is not None:
+            download_url = cf_file.get("downloadUrl") or ""
+            cf_sha1 = ""
+            for h in (cf_file.get("hashes") or []):
+                if h.get("algo") == 1:
+                    cf_sha1 = h.get("value") or ""
+                    break
+            if download_url:
+                file_size = cf_file.get("fileLength") or size
+                entry = {
+                    "path": path_str,
+                    "hashes": {"sha1": cf_sha1 or sha1_hash, "sha512": ""},
+                    "downloads": [download_url],
+                    "fileSize": int(file_size),
+                    "env": {"client": client_env, "server": server_env},
+                }
+                miss_info = {
+                    "filename": jar.name, "path": path_str,
+                    "sha1_local": sha1_hash,
+                    "sha1_curseforge": cf_sha1,
+                    "size": size,
+                    "reason": "on_curseforge_matched_by_fingerprint",
+                    "curseforge_mod_id": cf_file.get("modId"),
+                    "curseforge_file_id": cf_file.get("id"),
+                    "curseforge_file_url": download_url,
+                    "curseforge_file_filename": cf_file.get("fileName"),
+                }
+                return entry, miss_info
+
+        # 3b. 优先用 cf-modids.txt 映射（如果提供了）
         if cf_modids:
             for variant in parsed["name_variants"]:
                 v_lower = variant.lower()
@@ -1039,7 +1195,7 @@ def build_file_entry(
                     cf_matched_name = "(from cf-modids.txt)"
                     break
 
-        # 3b. 映射里没有 → 自动用 CF search API 查找
+        # 3c. 映射里没有 → 自动用 CF search API 查找
         if cf_mod_id is None:
             try:
                 cf_mod_id, cf_matched_slug, cf_matched_name = cf_find_mod_id(parsed)
@@ -1179,6 +1335,8 @@ def reason_summary(reason: str) -> str:
         return "Modrinth 上有此 mod，但版本号不匹配 → 已用 Modrinth 最新版 URL+SHA1 写入 JSON（由 --allow-version-fallback 启用）"
     if reason.startswith("on_curseforge_matched_by_filename"):
         return "CurseForge 上有同名 jar → 已用 CF URL+SHA1 写入 JSON（由 --curseforge 启用）"
+    if reason.startswith("on_curseforge_matched_by_fingerprint"):
+        return "CurseForge 指纹精确命中本地 jar → 已用 CF URL+SHA1 写入 JSON（不依赖文件名搜索）"
     if reason == "on_curseforge_but_no_matching_file":
         return "CurseForge 上有此 mod 项目，但没有文件名匹配的 file（可能版本不同）"
     if reason == "on_curseforge_but_no_download_url":
