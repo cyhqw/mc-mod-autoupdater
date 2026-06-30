@@ -252,6 +252,8 @@ def cf_find_mod_id(parsed: Dict[str, str]) -> Tuple[Optional[int], str, str]:
          尝试的 slug 变体: 原始、去 - 转 _、去 _ 转 -、全小写、去尾部数字等
       2. slug 搜索失败 → 用 mod 名作为 searchFilter 模糊搜索
          取第一个结果，但仍需用户验证
+      3. 模糊搜索也失败 → 尝试用 mod 名的第一个 token 作为 searchFilter
+         (处理 webdisplay-qzxffixedto 这种带魔改后缀的情况)
     """
     # 1. 尝试 slug 精确搜索
     tried_slugs = set()
@@ -290,10 +292,11 @@ def cf_find_mod_id(parsed: Dict[str, str]) -> Tuple[Optional[int], str, str]:
                 pass
             time.sleep(0.05)
 
-    # 2. 模糊搜索（searchFilter）
-    # 用 mod 名第一个变体
-    if parsed["name_variants"]:
-        query = parsed["name_variants"][0]
+    # 2. 模糊搜索（searchFilter）— 用所有变体依次试
+    for variant in parsed["name_variants"][:3]:
+        query = variant.replace("-", " ").replace("_", " ")
+        if not query:
+            continue
         try:
             results = cf_search_by_query(query, limit=3)
             if results:
@@ -301,6 +304,24 @@ def cf_find_mod_id(parsed: Dict[str, str]) -> Tuple[Optional[int], str, str]:
                 return m.get("id"), m.get("slug", ""), m.get("name", "")
         except Exception:
             pass
+        time.sleep(0.05)
+
+    # 3. 用 mod 名的第一个 token 模糊搜索
+    #    处理 webdisplay-qzxffixedto 这种带魔改后缀的情况
+    if parsed["name_variants"]:
+        # 取第一个变体的第一个 token
+        first_variant = parsed["name_variants"][0]
+        tokens = first_variant.replace("_", "-").split("-")
+        if tokens and len(tokens) > 1:
+            first_token = tokens[0]
+            if len(first_token) >= 3:  # 避免太短的 token
+                try:
+                    results = cf_search_by_query(first_token, limit=3)
+                    if results:
+                        m = results[0]
+                        return m.get("id"), m.get("slug", ""), m.get("name", "")
+                except Exception:
+                    pass
 
     return None, "", ""
 
@@ -1032,12 +1053,29 @@ def build_file_entry(
                 cf_mod_id = None
 
         if cf_mod_id is not None:
-            try:
-                cf_file, cf_detail = find_cf_file_by_filename(
-                    cf_mod_id, jar.name, game_version, parsed["loader"])
-            except Exception as e:
-                cf_file = None
-                sys.stderr.write(f"[WARN] CF lookup failed for modId={cf_mod_id}: {e}\n")
+            # 用户文件名可能带 [中文标注] 前缀，CF 上的文件名不带前缀
+            # 尝试用原始文件名 + 去前缀文件名 两种匹配
+            import re as _re
+            stripped_name = jar.name
+            while stripped_name.startswith("["):
+                end = stripped_name.find("]")
+                if end < 0:
+                    break
+                stripped_name = stripped_name[end + 1:].strip()
+            filenames_to_try = [jar.name]
+            if stripped_name != jar.name:
+                filenames_to_try.append(stripped_name)
+
+            cf_file = None
+            for fname in filenames_to_try:
+                try:
+                    cf_file, _ = find_cf_file_by_filename(
+                        cf_mod_id, fname, game_version, parsed["loader"])
+                except Exception as e:
+                    sys.stderr.write(f"[WARN] CF lookup failed for modId={cf_mod_id} fname={fname}: {e}\n")
+                    cf_file = None
+                if cf_file is not None:
+                    break
 
             if cf_file is not None:
                 download_url = cf_file.get("downloadUrl") or ""
