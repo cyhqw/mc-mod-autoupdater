@@ -47,7 +47,6 @@ jobs:
           mkdir -p staging
           cp fabric/build/libs/mc-mod-autoupdater-fabric-*.jar staging/
           cp forge/build/libs/mc-mod-autoupdater-forge-*.jar staging/
-          cp common/build/libs/mc-mod-autoupdater-common-*.jar staging/ 2>/dev/null || true
           ls -la staging/
 
       - name: Determine tag name
@@ -69,4 +68,3 @@ jobs:
           files: |
             staging/mc-mod-autoupdater-fabric-*.jar
             staging/mc-mod-autoupdater-forge-*.jar
-            staging/mc-mod-autoupdater-common-*.jar
