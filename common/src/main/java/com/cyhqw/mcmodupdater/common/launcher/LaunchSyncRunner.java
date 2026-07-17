@@ -92,12 +92,16 @@ public final class LaunchSyncRunner {
                 saveConfigQuietly(configPath, config);
             }
             // 弹出 5 秒自动关闭的提示弹窗（原静默不弹出）
-            String localLabel = check.localVersionId.isEmpty() ? "(首次安装)" : check.localVersionId;
-            String upToDateMsg = String.format(
-                    "整合包已是最新版本，无需更新。\n\n本地版本: %s\n远端版本: %s",
-                    localLabel, check.remoteVersionId.isEmpty() ? "(未声明)" : check.remoteVersionId);
-            SimpleDialog.showAutoClose("MC Mod Auto-Updater — " + modsLabel,
-                    upToDateMsg, javax.swing.JOptionPane.INFORMATION_MESSAGE, 5000);
+            if (swingReady) {
+                String localLabel = check.localVersionId.isEmpty() ? "(首次安装)" : check.localVersionId;
+                String upToDateMsg = String.format(
+                        "整合包已是最新版本，无需更新。\n\n本地版本: %s\n远端版本: %s",
+                        localLabel, check.remoteVersionId.isEmpty() ? "(未声明)" : check.remoteVersionId);
+                SimpleDialog.showAutoClose("MC Mod Auto-Updater — " + modsLabel,
+                        upToDateMsg, javax.swing.JOptionPane.INFORMATION_MESSAGE, 5000);
+            } else {
+                ModLog.info("[LaunchSync] Swing not available, skipping up-to-date dialog");
+            }
             return LaunchSyncResult.upToDate(check.remoteVersionId);
         }
 
@@ -323,8 +327,9 @@ public final class LaunchSyncRunner {
         }
 
         /**
-         * 显示一个非模态弹窗，指定毫秒后自动关闭。
+         * 显示一个模态弹窗，指定毫秒后自动关闭。
          * 调用线程会阻塞直到弹窗被关闭（由计时器或用户手动关闭）。
+         * 使用 JOptionPane 创建模态对话框，确保显示在最前。
          *
          * @param title      窗口标题
          * @param message    消息内容（支持多行 \n）
@@ -332,43 +337,27 @@ public final class LaunchSyncRunner {
          * @param delayMs    自动关闭延迟（毫秒）
          */
         static void showAutoClose(String title, String message, int messageType, int delayMs) {
-            final javax.swing.JDialog[] holder = new javax.swing.JDialog[1];
             try {
                 javax.swing.SwingUtilities.invokeAndWait(() -> {
-                    javax.swing.JDialog dialog = new javax.swing.JDialog((java.awt.Frame) null, title, false);
-                    dialog.setDefaultCloseOperation(javax.swing.WindowConstants.DISPOSE_ON_CLOSE);
-                    String html = "<html><div style='text-align:center;'>" +
-                            message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                                    .replace("\n", "<br>") + "</div></html>";
-                    javax.swing.JLabel label = new javax.swing.JLabel(html);
-                    label.setBorder(javax.swing.BorderFactory.createEmptyBorder(24, 36, 24, 36));
-                    label.setFont(label.getFont().deriveFont(13f));
-                    dialog.setContentPane(label);
-                    dialog.pack();
-                    dialog.setLocationRelativeTo(null);
+                    // 用 JOptionPane 创建模态对话框，比裸 JDialog 更可靠
+                    javax.swing.JOptionPane pane = new javax.swing.JOptionPane(
+                            message, messageType,
+                            javax.swing.JOptionPane.DEFAULT_OPTION,
+                            null, new Object[0], null);
+                    javax.swing.JDialog dialog = pane.createDialog(title);
+                    dialog.setModal(true);
+                    dialog.setDefaultCloseOperation(javax.swing.JDialog.DISPOSE_ON_CLOSE);
+                    // 尝试置顶，确保不被 Minecraft 窗口遮挡
                     try { dialog.setAlwaysOnTop(true); } catch (Exception ignored) {}
+                    // 定时器到点后自动关闭
                     javax.swing.Timer timer = new javax.swing.Timer(delayMs, e -> dialog.dispose());
                     timer.setRepeats(false);
                     timer.start();
-                    dialog.setVisible(true);
-                    holder[0] = dialog;
+                    ModLog.info("[LaunchSync] Showing auto-close dialog (%dms)", delayMs);
+                    dialog.setVisible(true); // 模态，阻塞 EDT 直到 dispose
                 });
             } catch (Exception e) {
                 ModLog.warn("[LaunchSync] Failed to show auto-close dialog: %s", e.getMessage());
-                return;
-            }
-            // 阻塞调用线程直到弹窗关闭（计时器或用户手动关闭）
-            javax.swing.JDialog dialog = holder[0];
-            if (dialog != null) {
-                long deadline = System.currentTimeMillis() + delayMs + 2000;
-                while (dialog.isDisplayable() && System.currentTimeMillis() < deadline) {
-                    try {
-                        Thread.sleep(50);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
-                }
             }
         }
     }
