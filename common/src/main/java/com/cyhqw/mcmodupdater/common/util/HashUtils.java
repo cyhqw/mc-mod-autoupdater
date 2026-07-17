@@ -28,6 +28,14 @@ public final class HashUtils {
         return hashBytes(data, "SHA-1");
     }
 
+    public static String md5(Path file) throws IOException {
+        return hash(file, "MD5");
+    }
+
+    public static String md5Bytes(byte[] data) {
+        return hashBytes(data, "MD5");
+    }
+
     private static String hash(Path file, String algorithm) throws IOException {
         MessageDigest md;
         try {
