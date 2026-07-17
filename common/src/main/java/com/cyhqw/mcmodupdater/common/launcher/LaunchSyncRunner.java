@@ -55,6 +55,21 @@ public final class LaunchSyncRunner {
         }
 
         String url = config.effectiveManifestUrl();
+        if (url.isBlank()) {
+            ModLog.warn("[LaunchSync] manifestUrl is not configured; skipping sync.");
+            String msg = "未配置整合包清单 URL（manifestUrl）。\n\n"
+                    + "请在 config/mcmodupdater/mcmodupdater.properties 中设置 manifestUrl，\n"
+                    + "指向一个可访问的 modrinth.index.json。\n"
+                    + "游戏将继续加载。";
+            try {
+                SimpleDialog.show("MC Mod Auto-Updater — " + modsLabel,
+                        msg, javax.swing.JOptionPane.WARNING_MESSAGE);
+            } catch (Throwable t) {
+                ModLog.warn("[LaunchSync] SimpleDialog failed: %s", t.getMessage());
+            }
+            return LaunchSyncResult.fetchFailed("manifestUrl 未配置",
+                    config.currentVersionId == null || config.currentVersionId.isEmpty());
+        }
         ModLog.info("[LaunchSync] Checking manifest version at %s", url);
 
         Path trackedModsPath = configPath.resolveSibling("tracked_mods.txt");

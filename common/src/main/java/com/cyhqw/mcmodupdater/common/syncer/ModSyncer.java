@@ -518,6 +518,9 @@ public final class ModSyncer {
     }
 
     private ModrinthIndex fetchManifest(String url) throws IOException, InterruptedException {
+        if (url == null || url.isBlank()) {
+            throw new IOException("manifestUrl 未配置：请在 config/mcmodupdater/mcmodupdater.properties 中设置 manifestUrl");
+        }
         String body = HttpUtil.getString(url, config.effectiveHttpTimeoutMs(), 0);
         JsonObject root = JsonParser.parseString(body).getAsJsonObject();
 
