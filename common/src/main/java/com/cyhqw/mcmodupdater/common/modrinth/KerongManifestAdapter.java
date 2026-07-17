@@ -60,12 +60,14 @@ public final class KerongManifestAdapter {
         ModLog.info("[KerongAdapter] baseUrl=%s, mapped %d mod + %d config + %d resource files (%d total)",
                 baseUrl, modCount, configCount, resourceCount, index.files.size());
 
-        // filesToKeep：Kerong 用于保护特定文件不被清理。本同步引擎基于 tracked-mods 模型，
-        // 仅清理“曾由本模组下载、但新清单中已移除”的模组，玩家自加模组本就不会被删除，
-        // 因此 filesToKeep 在当前模型下无需额外迁移，仅记录数量以便排查。
+        // filesToKeep：传递给同步引擎，使其在清理 tracked 孤儿文件时跳过这些路径。
+        // Kerong 用 filesToKeep 保护整个目录（如 "config/"）或特定文件不被删除。
+        // 虽然 tracked 模型本身已保护玩家自加文件，但 filesToKeep 还需保护"曾由本模组下载、
+        // 但已从清单移除"的文件（tracked 孤儿），例如整合包作者主动移除某 config 但仍想保留它。
         if (kerong.filesToKeep != null && !kerong.filesToKeep.isEmpty()) {
-            ModLog.info("[KerongAdapter] filesToKeep (%d entries) not migrated (tracked-mods model already protects them)",
-                    kerong.filesToKeep.size());
+            index.filesToKeep = new java.util.ArrayList<>(kerong.filesToKeep);
+            ModLog.info("[KerongAdapter] filesToKeep (%d entries) migrated: %s",
+                    kerong.filesToKeep.size(), kerong.filesToKeep);
         }
 
         ModLog.info("[KerongAdapter] Adapted to ModrinthIndex: versionId=%s, name=%s, files=%d",

@@ -55,4 +55,11 @@ public final class ModrinthIndex {
      * 对应 manifest 中的 game version 和 loader 信息。
      */
     public Map<String, String> dependencies = new LinkedHashMap<>();
+
+    /**
+     * 需保留的路径前缀/文件（来自 Kerong filesToKeep）。
+     * 标准 Modrinth 格式不包含此字段，留空即可。同步引擎据此跳过这些路径的清理，
+     * 即便它们曾由本模组下载但已从清单移除（例如整个 config/ 目录被标记为 keep）。
+     */
+    public List<String> filesToKeep;
 }

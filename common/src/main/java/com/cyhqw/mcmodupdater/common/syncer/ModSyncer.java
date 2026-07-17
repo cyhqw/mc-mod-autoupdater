@@ -621,12 +621,19 @@ public final class ModSyncer {
     // Keep paths from Kerong filesToKeep
     // ------------------------------------------------------------------
 
-    /** 从 manifest 中提取 filesToKeep（Kerong 格式）。 */
+    /** 从 manifest 中提取 filesToKeep（Kerong 格式适配后存入 index.filesToKeep）。 */
     private Set<String> extractKeepPaths(ModrinthIndex index) {
-        // 目前 filesToKeep 仅在 KerongManifestAdapter 适配时以描述性方式传递。
-        // 这里从 index 中判断是否包含 Kerong 特有的信息。
-        // 简化处理：默认空集，后续可通过配置扩展。
-        return Collections.emptySet();
+        if (index.filesToKeep == null || index.filesToKeep.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Set<String> result = new HashSet<>();
+        for (String entry : index.filesToKeep) {
+            if (entry != null && !entry.isBlank()) {
+                result.add(normalizePath(entry));
+            }
+        }
+        ModLog.info("[Sync] Loaded %d filesToKeep entries: %s", result.size(), result);
+        return result;
     }
 
     private boolean isKeptByPrefix(String relPath) {
