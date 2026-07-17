@@ -33,6 +33,7 @@ public final class KerongManifest {
     @SerializedName(value = "versionName", alternate = { "VersionName" })
     public String versionName;
 
+    @SerializedName(value = "description", alternate = { "Description" })
     public String description;
 
     @SerializedName(value = "releaseDate", alternate = { "ReleaseDate" })

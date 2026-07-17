@@ -520,7 +520,9 @@ public final class ModSyncer {
             return GSON.fromJson(root, ModrinthIndex.class);
         }
 
-        if (root.has("version") && hasAnyKerongFileList(root)) {
+        // Kerong version.json 的顶层字段使用 PascalCase（Version/ModFiles/ConfigFiles/...），
+        // 个别旧版可能用 camelCase，故 size/version 均做大小写不敏感检测。
+        if (hasKeyIgnoreCase(root, "version", "Version") && hasAnyKerongFileList(root)) {
             KerongManifest kerong = GSON.fromJson(root, KerongManifest.class);
             ModLog.info("[Manifest] Detected Kerong-style manifest (version=%d, name=%s, modFiles=%d, configFiles=%d, resourceFiles=%d)",
                     kerong.version, kerong.versionName,
@@ -531,13 +533,24 @@ public final class ModSyncer {
         }
 
         throw new IOException("Unknown manifest format: expected 'formatVersion' (Modrinth) "
-                + "or 'version'+file list (Kerong). Raw keys: " + root.keySet());
+                + "or 'Version'+file list (Kerong). Raw keys: " + root.keySet());
     }
 
+    /** Kerong 清单可能仅含 configFiles/resourceFiles（无 modFiles），故任一文件列表存在即可识别。 */
     private static boolean hasAnyKerongFileList(JsonObject root) {
-        return root.has("modFiles") || root.has("ModFiles")
-                || root.has("configFiles") || root.has("ConfigFiles")
-                || root.has("resourceFiles") || root.has("ResourceFiles");
+        return hasKeyIgnoreCase(root, "modFiles", "ModFiles")
+                || hasKeyIgnoreCase(root, "configFiles", "ConfigFiles")
+                || hasKeyIgnoreCase(root, "resourceFiles", "ResourceFiles");
+    }
+
+    /** 检查 JsonObject 是否含有任意一个指定 key（精确匹配，大小写敏感）。 */
+    private static boolean hasKeyIgnoreCase(JsonObject root, String... keys) {
+        for (String key : keys) {
+            if (root.has(key)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ------------------------------------------------------------------
