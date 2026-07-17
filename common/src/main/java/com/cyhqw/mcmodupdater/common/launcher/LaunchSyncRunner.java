@@ -184,136 +184,24 @@ public final class LaunchSyncRunner {
     }
 
     /**
-     * 强制解除 AWT headless 模式。
-     * Minecraft 在 modloading 阶段会设 java.awt.headless=true，
-     * Java 17 模块系统会阻止普通反射 (InaccessibleObjectException)，
-     * 因此使用 sun.misc.Unsafe 直接操作内存绕过模块限制。
+     * 尝试解除 AWT headless 模式。
      *
-     * @return true 如果 Swing 可用（headless 已解除）
+     * <p>Minecraft modloading 阶段强制 java.awt.headless=true。Java 17+ 模块系统
+     * 阻止反射重置 (InaccessibleObjectException)，而 sun.misc.Unsafe 直接操作
+     * AWT 内部状态会导致 JVM native 崩溃 (EXCEPTION_ACCESS_VIOLATION)。</p>
+     *
+     * <p>因此本方法只设置系统属性（无害，某些代码可能检查它），始终返回 false。
+     * 所有弹窗改为通过独立 JVM 子进程显示（见 SimpleDialog.spawnDialogProcess），
+     * 子进程自带 -Djava.awt.headless=false，完全不碰当前 JVM 的 AWT 状态。</p>
+     *
+     * @return 始终 false（当前 JVM 内 Swing 不可用）
      */
     private static boolean forceEnableAwt() {
-        try {
-            // 1. 设置系统属性
-            System.setProperty("java.awt.headless", "false");
-
-            // 2. 尝试普通反射；如果失败（Java 17 模块限制），用 Unsafe 绕过
-            boolean regularReflectionWorked = tryResetHeadlessViaReflection();
-            if (!regularReflectionWorked) {
-                ModLog.info("[LaunchSync] Regular reflection blocked, trying Unsafe approach");
-                tryResetHeadlessViaUnsafe();
-            }
-
-            // 3. 验证
-            java.awt.GraphicsEnvironment ge = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment();
-            boolean headless = ge.isHeadless();
-            ModLog.info("[LaunchSync] AWT headless=%s, ge=%s", headless, ge.getClass().getSimpleName());
-            if (headless) {
-                ModLog.warn("[LaunchSync] headless still true. Swing dialogs will fail.");
-                return false;
-            }
-            return true;
-        } catch (Throwable t) {
-            ModLog.warn("[LaunchSync] forceEnableAwt failed: %s", t.getMessage());
-            return false;
-        }
-    }
-
-    /** 普通反射方式重置 headless 字段。返回 true 表示成功。 */
-    private static boolean tryResetHeadlessViaReflection() {
-        boolean ok = true;
-        try {
-            Class<?> tkClass = Class.forName("java.awt.Toolkit");
-            java.lang.reflect.Field f = tkClass.getDeclaredField("toolkit");
-            f.setAccessible(true);
-            f.set(null, null);
-            ModLog.info("[LaunchSync] Reflection: Reset Toolkit.toolkit=null OK");
-        } catch (Exception e) {
-            ModLog.info("[LaunchSync] Reflection: Toolkit reset blocked (%s)", e.getClass().getSimpleName());
-            ok = false;
-        }
-        try {
-            Class<?> geClass = Class.forName("java.awt.GraphicsEnvironment");
-            java.lang.reflect.Field f = geClass.getDeclaredField("headless");
-            f.setAccessible(true);
-            f.set(null, Boolean.FALSE);
-            ModLog.info("[LaunchSync] Reflection: Reset GE.headless=false OK");
-        } catch (Exception e) {
-            ModLog.info("[LaunchSync] Reflection: GE.headless blocked (%s)", e.getClass().getSimpleName());
-            ok = false;
-        }
-        try {
-            Class<?> geClass = Class.forName("java.awt.GraphicsEnvironment");
-            java.lang.reflect.Field f = geClass.getDeclaredField("defaultHeadless");
-            f.setAccessible(true);
-            f.set(null, Boolean.FALSE);
-            ModLog.info("[LaunchSync] Reflection: Reset GE.defaultHeadless=false OK");
-        } catch (Exception e) {
-            ModLog.info("[LaunchSync] Reflection: GE.defaultHeadless blocked (%s)", e.getClass().getSimpleName());
-            ok = false;
-        }
-        return ok;
-    }
-
-    /**
-     * 用 sun.misc.Unsafe 绕过 Java 17 模块系统，直接操作内存重置 headless 字段。
-     * Unsafe 在 jdk.unsupported 模块中，不受模块限制，
-     * staticFieldOffset / putBoolean / putObject 不检查访问权限。
-     */
-    @SuppressWarnings("removal")
-    private static void tryResetHeadlessViaUnsafe() {
-        try {
-            // 获取 Unsafe 实例
-            Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
-            java.lang.reflect.Field theUnsafe = unsafeClass.getDeclaredField("theUnsafe");
-            theUnsafe.setAccessible(true);
-            sun.misc.Unsafe unsafe = (sun.misc.Unsafe) theUnsafe.get(null);
-            ModLog.info("[LaunchSync] Unsafe: obtained instance OK");
-
-            // 重置 GraphicsEnvironment.headless = false
-            resetStaticBooleanViaUnsafe(unsafe, "java.awt.GraphicsEnvironment", "headless", false);
-            // 重置 GraphicsEnvironment.defaultHeadless = false
-            resetStaticBooleanViaUnsafe(unsafe, "java.awt.GraphicsEnvironment", "defaultHeadless", false);
-            // 重置 GraphicsEnvironment.localEnv = null（强制重新创建非 headless 实例）
-            resetStaticObjectViaUnsafe(unsafe, "java.awt.GraphicsEnvironment", "localEnv", null);
-            // 重置 Toolkit.toolkit = null（强制重新创建非 headless 实例）
-            resetStaticObjectViaUnsafe(unsafe, "java.awt.Toolkit", "toolkit", null);
-
-        } catch (Exception e) {
-            ModLog.warn("[LaunchSync] Unsafe approach failed: %s: %s", e.getClass().getSimpleName(), e.getMessage());
-        }
-    }
-
-    private static void resetStaticBooleanViaUnsafe(sun.misc.Unsafe unsafe,
-            String className, String fieldName, boolean value) {
-        try {
-            Class<?> clazz = Class.forName(className);
-            java.lang.reflect.Field f = clazz.getDeclaredField(fieldName);
-            // Unsafe 不需要 setAccessible！直接获取偏移量
-            long offset = unsafe.staticFieldOffset(f);
-            Object base = unsafe.staticFieldBase(f);
-            unsafe.putBoolean(base, offset, value);
-            ModLog.info("[LaunchSync] Unsafe: set %s.%s=%s OK", className, fieldName, value);
-        } catch (NoSuchFieldException e) {
-            ModLog.info("[LaunchSync] Unsafe: %s.%s field not found", className, fieldName);
-        } catch (Exception e) {
-            ModLog.warn("[LaunchSync] Unsafe: %s.%s failed: %s", className, fieldName, e.getMessage());
-        }
-    }
-
-    private static void resetStaticObjectViaUnsafe(sun.misc.Unsafe unsafe,
-            String className, String fieldName, Object value) {
-        try {
-            Class<?> clazz = Class.forName(className);
-            java.lang.reflect.Field f = clazz.getDeclaredField(fieldName);
-            long offset = unsafe.staticFieldOffset(f);
-            Object base = unsafe.staticFieldBase(f);
-            unsafe.putObject(base, offset, value);
-            ModLog.info("[LaunchSync] Unsafe: set %s.%s=%s OK", className, fieldName, value);
-        } catch (NoSuchFieldException e) {
-            ModLog.info("[LaunchSync] Unsafe: %s.%s field not found", className, fieldName);
-        } catch (Exception e) {
-            ModLog.warn("[LaunchSync] Unsafe: %s.%s failed: %s", className, fieldName, e.getMessage());
-        }
+        System.setProperty("java.awt.headless", "false");
+        boolean headless = java.awt.GraphicsEnvironment.isHeadless();
+        ModLog.info("[LaunchSync] AWT headless=%s (in-process Swing disabled, using subprocess dialogs)",
+                headless);
+        return false;
     }
 
     private static LaunchSyncResult handleFetchError(ModUpdaterConfig config, Path configPath,
@@ -385,48 +273,97 @@ public final class LaunchSyncRunner {
         }
     }
 
-    /** 简单对话框助手（用于错误提示）。 */
+    /**
+     * 简单对话框助手。通过启动独立 JVM 子进程显示弹窗，
+     * 完全绕过当前 JVM 的 headless 限制。
+     */
     private static final class SimpleDialog {
+
         static void show(String title, String message, int messageType) {
-            try {
-                javax.swing.SwingUtilities.invokeAndWait(() ->
-                        javax.swing.JOptionPane.showMessageDialog(null, message, title, messageType));
-            } catch (Exception e) {
-                ModLog.warn("[LaunchSync] Failed to show simple dialog: %s", e.getMessage());
-                javax.swing.JOptionPane.showMessageDialog(null, message, title, messageType);
-            }
+            spawnDialogProcess("show", title, message, 0, messageType);
+        }
+
+        static void showAutoClose(String title, String message, int messageType, int delayMs) {
+            spawnDialogProcess("autoclose", title, message, delayMs, messageType);
         }
 
         /**
-         * 显示一个弹窗，指定毫秒后自动关闭。
-         * 不用 invokeAndWait——直接在调用线程上创建 dialog 并 setVisible，
-         * 和 show() 的 fallback 路径完全一致（showMessageDialog 内部也是这么做的）。
-         * setVisible(true) 会启动嵌套事件循环，Timer 事件能在其中被处理。
+         * 启动独立 JVM 子进程显示弹窗。子进程自带 -Djava.awt.headless=false，
+         * 不受当前 JVM 的 headless 限制，也不碰当前 JVM 的 AWT 状态（不会崩溃）。
          */
-        static void showAutoClose(String title, String message, int messageType, int delayMs) {
-            ModLog.info("[LaunchSync] showAutoClose: called (headless=%s, thread=%s)",
-                    java.awt.GraphicsEnvironment.isHeadless(), Thread.currentThread().getName());
+        private static void spawnDialogProcess(String mode, String title, String message,
+                                                int delayMs, int messageType) {
+            ModLog.info("[LaunchSync] Spawning dialog subprocess: mode=%s title=%s delayMs=%d",
+                    mode, title, delayMs);
             try {
-                javax.swing.JOptionPane pane = new javax.swing.JOptionPane(message, messageType);
-                javax.swing.JDialog dialog = pane.createDialog(title);
-                dialog.setDefaultCloseOperation(javax.swing.JDialog.DISPOSE_ON_CLOSE);
-                javax.swing.Timer timer = new javax.swing.Timer(delayMs, e -> {
-                    ModLog.info("[LaunchSync] showAutoClose: timer fired, disposing dialog");
-                    dialog.dispose();
-                });
-                timer.setRepeats(false);
-                timer.start();
-                ModLog.info("[LaunchSync] showAutoClose: setVisible(true), will auto-close in %dms", delayMs);
-                dialog.setVisible(true);
-                ModLog.info("[LaunchSync] showAutoClose: dialog closed");
-            } catch (Exception e) {
-                ModLog.warn("[LaunchSync] showAutoClose: dialog failed: %s", e.toString());
-                // fallback: 和 show() 完全一样，直接调 showMessageDialog
-                try {
-                    javax.swing.JOptionPane.showMessageDialog(null, message, title, messageType);
-                } catch (Exception e2) {
-                    ModLog.warn("[LaunchSync] showAutoClose: fallback also failed: %s", e2.toString());
+                String javaBin = getJavaBinary();
+                String jarPath = getOurJarPath();
+                if (javaBin == null || jarPath == null) {
+                    ModLog.warn("[LaunchSync] Cannot spawn dialog: java=%s jar=%s", javaBin, jarPath);
+                    return;
                 }
+
+                ProcessBuilder pb = new ProcessBuilder(
+                        javaBin,
+                        "-Djava.awt.headless=false",
+                        "-cp", jarPath,
+                        "com.cyhqw.mcmodupdater.common.launcher.DialogMain",
+                        mode, title, message,
+                        String.valueOf(delayMs),
+                        String.valueOf(messageType)
+                );
+                pb.redirectErrorStream(true);
+                Process p = pb.start();
+
+                // 在后台线程读取子进程输出，防止管道阻塞
+                Thread outputReader = new Thread(() -> {
+                    try {
+                        byte[] out = p.getInputStream().readAllBytes();
+                        if (out.length > 0) {
+                            String text = new String(out, java.nio.charset.StandardCharsets.UTF_8).trim();
+                            if (!text.isEmpty()) {
+                                ModLog.info("[LaunchSync] Dialog subprocess output: %s", text);
+                            }
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }, "dialog-output-reader");
+                outputReader.setDaemon(true);
+                outputReader.start();
+
+                // 等待子进程退出，超时则强制终止
+                int timeout = (delayMs > 0 ? delayMs : 30000) + 10000;
+                boolean exited = p.waitFor(timeout, java.util.concurrent.TimeUnit.MILLISECONDS);
+                if (!exited) {
+                    p.destroyForcibly();
+                    ModLog.warn("[LaunchSync] Dialog subprocess timed out, killed");
+                } else {
+                    ModLog.info("[LaunchSync] Dialog subprocess exited with code %d", p.exitValue());
+                }
+            } catch (Exception e) {
+                ModLog.warn("[LaunchSync] Failed to spawn dialog subprocess: %s", e.toString());
+            }
+        }
+
+        /** 获取 java 可执行文件路径。 */
+        private static String getJavaBinary() {
+            String javaHome = System.getProperty("java.home");
+            if (javaHome == null) return null;
+            String osName = System.getProperty("os.name", "").toLowerCase();
+            String exe = osName.contains("win") ? "java.exe" : "java";
+            java.io.File f = new java.io.File(javaHome, "bin" + java.io.File.separator + exe);
+            return f.exists() ? f.getAbsolutePath() : null;
+        }
+
+        /** 获取当前 jar 文件路径，用于子进程 classpath。 */
+        private static String getOurJarPath() {
+            try {
+                java.security.CodeSource cs = LaunchSyncRunner.class.getProtectionDomain().getCodeSource();
+                if (cs == null || cs.getLocation() == null) return null;
+                return cs.getLocation().toURI().getPath();
+            } catch (Exception e) {
+                ModLog.warn("[LaunchSync] Cannot find own jar path: %s", e.getMessage());
+                return null;
             }
         }
     }
