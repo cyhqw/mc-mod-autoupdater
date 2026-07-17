@@ -95,11 +95,15 @@ public final class LaunchSyncRunner {
             }
             // 弹出 5 秒自动关闭的提示弹窗（原静默不弹出）
             String localLabel = check.localVersionId.isEmpty() ? "(首次安装)" : check.localVersionId;
-            String upToDateMsg = String.format(
-                    "整合包已是最新版本，无需更新。\n\n本地版本: %s\n远端版本: %s",
-                    localLabel, check.remoteVersionId.isEmpty() ? "(未声明)" : check.remoteVersionId);
+            StringBuilder msgBuilder = new StringBuilder();
+            msgBuilder.append(String.format("整合包已是最新版本，无需更新。\n\n本地版本: %s\n远端版本: %s",
+                    localLabel, check.remoteVersionId.isEmpty() ? "(未声明)" : check.remoteVersionId));
+            // 如果做了哈希校验，在弹窗中显示校验结果
+            if (check.hashMethod != null && !check.hashMethod.isEmpty()) {
+                msgBuilder.append(String.format("\n\n文件校验 (%s): %s", check.hashMethod, check.hashSummary));
+            }
             SimpleDialog.showAutoClose("MC Mod Auto-Updater — " + modsLabel,
-                    upToDateMsg, javax.swing.JOptionPane.INFORMATION_MESSAGE, 5000);
+                    msgBuilder.toString(), javax.swing.JOptionPane.INFORMATION_MESSAGE, 5000);
             return LaunchSyncResult.upToDate(check.remoteVersionId);
         }
 

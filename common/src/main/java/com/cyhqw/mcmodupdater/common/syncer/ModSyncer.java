@@ -104,8 +104,76 @@ public final class ModSyncer {
         } else {
             needUpdate = !local.equals(remote);
             ModLog.info("Version check: local=%s remote=%s needUpdate=%s", local, remote, needUpdate);
+            // 版本号相同时，通过哈希校验检测文件内容是否被静默更新
+            if (!needUpdate && config.verifyHash) {
+                String[] hashInfo = hasContentChanged(index);
+                boolean contentChanged = "true".equals(hashInfo[0]);
+                if (contentChanged) {
+                    needUpdate = true;
+                    ModLog.info("Version matches (%s) but content hash mismatch detected, forcing update", remote);
+                }
+                return new CheckResult(index, remote, local, needUpdate, null, hashInfo[1], hashInfo[2]);
+            }
         }
-        return new CheckResult(index, remote, local, needUpdate, null);
+        return new CheckResult(index, remote, local, needUpdate, null, null, null);
+    }
+
+    /**
+     * 当版本号未变时，通过哈希校验检测文件内容是否发生变化。
+     *
+     * @return [0] "true"=需要更新 / "false"=全部匹配; [1] 校验方法描述; [2] 校验结果摘要
+     */
+    private String[] hasContentChanged(ModrinthIndex index) {
+        ManagedSelection selection = selectManagedFiles(index);
+        int checked = 0, mismatched = 0, missing = 0;
+        boolean usedSha1 = false, usedMd5 = false;
+        for (ModrinthFile file : selection.files) {
+            String relPath = normalizePath(file.path);
+            Path target = gameDir.resolve(relPath).normalize();
+            if (!isUnderManagedDir(target)) {
+                continue;
+            }
+            if (!Files.exists(target)) {
+                missing++;
+                continue;
+            }
+            String remoteHash = file.sha1();
+            String algo;
+            if (remoteHash != null && !remoteHash.isBlank()) {
+                algo = "sha1";
+                usedSha1 = true;
+            } else {
+                remoteHash = file.md5();
+                if (remoteHash == null || remoteHash.isBlank()) {
+                    continue;
+                }
+                algo = "md5";
+                usedMd5 = true;
+            }
+            try {
+                String localHash = "sha1".equals(algo) ? HashUtils.sha1(target) : HashUtils.md5(target);
+                checked++;
+                if (!localHash.equalsIgnoreCase(remoteHash)) {
+                    mismatched++;
+                    ModLog.info("[ContentCheck] hash mismatch: %s (local=%s remote=%s algo=%s)",
+                            relPath, localHash.substring(0, 8), remoteHash.substring(0, 8), algo);
+                }
+            } catch (IOException ignored) {
+            }
+        }
+        boolean changed = missing > 0 || mismatched > 0;
+        String method;
+        if (usedSha1 && usedMd5) method = "SHA1+MD5";
+        else if (usedSha1) method = "SHA1";
+        else if (usedMd5) method = "MD5";
+        else method = "(无哈希)";
+        String summary = String.format("已校验 %d 个文件", checked)
+                + (missing > 0 ? String.format("，缺失 %d", missing) : "")
+                + (mismatched > 0 ? String.format("，不一致 %d", mismatched) : "")
+                + (changed ? "" : "，全部一致");
+        ModLog.info("[ContentCheck] %d checked, %d missing, %d mismatch, %d total -> %s",
+                checked, missing, mismatched, selection.files.size(), changed ? "UPDATE NEEDED" : "all match");
+        return new String[]{String.valueOf(changed), method, summary};
     }
 
     /**
@@ -874,14 +942,24 @@ public final class ModSyncer {
         public final String localVersionId;
         public final boolean needUpdate;
         public final String errorMessage;
+        public final String hashMethod;
+        public final String hashSummary;
 
         private CheckResult(ModrinthIndex manifest, String remoteVersionId, String localVersionId,
                             boolean needUpdate, String errorMessage) {
+            this(manifest, remoteVersionId, localVersionId, needUpdate, errorMessage, null, null);
+        }
+
+        private CheckResult(ModrinthIndex manifest, String remoteVersionId, String localVersionId,
+                            boolean needUpdate, String errorMessage,
+                            String hashMethod, String hashSummary) {
             this.manifest = manifest;
             this.remoteVersionId = remoteVersionId;
             this.localVersionId = localVersionId;
             this.needUpdate = needUpdate;
             this.errorMessage = errorMessage;
+            this.hashMethod = hashMethod;
+            this.hashSummary = hashSummary;
         }
 
         public static CheckResult error(String message) {
