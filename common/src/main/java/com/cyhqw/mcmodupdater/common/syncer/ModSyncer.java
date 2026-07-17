@@ -139,17 +139,6 @@ public final class ModSyncer {
 
         ManagedSelection selection = selectManagedFiles(index);
 
-        // 构建 manifest 路径 → ModrinthFile 映射（用于查询远程哈希）
-        Map<String, ModrinthFile> manifestFileMap = new HashMap<>();
-        for (ModrinthFile f : selection.allFiles) {
-            manifestFileMap.put(normalizePath(f.path), f);
-        }
-        // 也包含 selection.files 中实际入选的文件
-        Map<String, ModrinthFile> selectedFileMap = new HashMap<>();
-        for (ModrinthFile f : selection.files) {
-            selectedFileMap.put(normalizePath(f.path), f);
-        }
-
         List<DiffEntry> toDownload = new ArrayList<>();
         List<DiffEntry> toKeep = new ArrayList<>();
 
@@ -650,16 +639,28 @@ public final class ModSyncer {
                     stream.sorted((a, b) -> -a.compareTo(b))
                             .filter(Files::isDirectory)
                             .forEach(p -> {
-                                try {
-                                    if (Files.isDirectory(p) && Files.list(p).findAny().isEmpty()) {
+                                if (isEmptyDirectory(p)) {
+                                    try {
                                         Files.delete(p);
-                                        ModLog.debug("Removed empty dir: %s", normalizedGameDir.relativize(p));
-                                    }
-                                } catch (IOException ignored) {}
+                                        ModLog.info("Removed empty dir: %s", normalizedGameDir.relativize(p));
+                                    } catch (IOException ignored) {}
+                                }
                             });
                 }
             } catch (IOException ignored) {
             }
+        }
+    }
+
+    /** 安全地判断目录是否为空（正确关闭 Files.list 返回的 Stream，避免文件描述符泄漏）。 */
+    private static boolean isEmptyDirectory(Path dir) {
+        if (!Files.isDirectory(dir)) {
+            return false;
+        }
+        try (Stream<Path> entries = Files.list(dir)) {
+            return entries.findAny().isEmpty();
+        } catch (IOException e) {
+            return false;
         }
     }
 
