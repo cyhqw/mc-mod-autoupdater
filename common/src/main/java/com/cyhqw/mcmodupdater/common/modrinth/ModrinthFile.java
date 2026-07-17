@@ -52,11 +52,6 @@ public final class ModrinthFile {
         return nonBlank(hashes != null ? hashes.get("sha512") : null);
     }
 
-    /** 便捷方法：返回 md5（Kerong 格式用），若缺失或为空白返回 null。 */
-    public String md5() {
-        return nonBlank(hashes != null ? hashes.get("md5") : null);
-    }
-
     /** 将空白哈希值归一化为 null，使所有调用方对“缺失/空”处理一致。 */
     private static String nonBlank(String value) {
         return (value == null || value.isBlank()) ? null : value;
