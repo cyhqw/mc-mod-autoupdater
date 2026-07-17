@@ -107,8 +107,66 @@ public final class ModSyncer {
         } else {
             needUpdate = !local.equals(remote);
             ModLog.info("Version check: local=%s remote=%s needUpdate=%s", local, remote, needUpdate);
+            // 版本号相同时，通过哈希校验检测文件内容是否被静默更新
+            if (!needUpdate && config.verifyHash) {
+                needUpdate = hasContentChanged(index);
+                if (needUpdate) {
+                    ModLog.info("Version matches (%s) but content hash mismatch detected, forcing update", remote);
+                }
+            }
         }
         return new CheckResult(index, remote, local, needUpdate, null);
+    }
+
+    /**
+     * 当版本号未变时，通过哈希校验检测文件内容是否发生变化。
+     *
+     * <p>遍历清单中所有选中的 mod 文件，对本地存在的文件计算哈希并与清单中的远端哈希对比。
+     * 若任一文件本地缺失或哈希不匹配，返回 true（需要更新）。
+     * 仅在 {@code config.verifyHash} 为 true 时调用。</p>
+     *
+     * @param index 已拉取的清单
+     * @return true 表示检测到内容变化（文件缺失或哈希不匹配）
+     */
+    private boolean hasContentChanged(ModrinthIndex index) {
+        ManifestSelection selection = selectManifestMods(index);
+        int checked = 0, mismatched = 0, missing = 0;
+        for (ModrinthFile file : selection.files) {
+            String filename = file.fileName();
+            Path target = modsDir.resolve(filename).normalize();
+            if (!target.startsWith(modsDir)) {
+                continue;
+            }
+            if (!Files.exists(target)) {
+                missing++;
+                continue;
+            }
+            String remoteHash = file.sha1();
+            String algo;
+            if (remoteHash != null && !remoteHash.isBlank()) {
+                algo = "sha1";
+            } else {
+                remoteHash = file.md5();
+                if (remoteHash == null || remoteHash.isBlank()) {
+                    continue; // 无哈希信息，跳过
+                }
+                algo = "md5";
+            }
+            try {
+                String localHash = "sha1".equals(algo) ? HashUtils.sha1(target) : HashUtils.md5(target);
+                checked++;
+                if (!localHash.equalsIgnoreCase(remoteHash)) {
+                    mismatched++;
+                    ModLog.info("[ContentCheck] hash mismatch: %s (local=%s remote=%s algo=%s)",
+                            filename, localHash.substring(0, 8), remoteHash.substring(0, 8), algo);
+                }
+            } catch (IOException ignored) {
+            }
+        }
+        boolean changed = missing > 0 || mismatched > 0;
+        ModLog.info("[ContentCheck] %d checked, %d missing, %d mismatch, %d total -> %s",
+                checked, missing, mismatched, selection.files.size(), changed ? "UPDATE NEEDED" : "all match");
+        return changed;
     }
 
     /**
