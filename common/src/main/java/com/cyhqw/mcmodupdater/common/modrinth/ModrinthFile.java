@@ -52,6 +52,11 @@ public final class ModrinthFile {
         return hashes != null ? hashes.get("sha512") : null;
     }
 
+    /** 便捷方法：返回 md5（Kerong 格式用），若缺失返回 null。 */
+    public String md5() {
+        return hashes != null ? hashes.get("md5") : null;
+    }
+
     /** 便捷方法：判断 client 是否需要此文件（"required" 或 "optional" 或 env 缺失）。 */
     public boolean isClientRequired() {
         if (env == null) {

@@ -2,11 +2,14 @@ package com.cyhqw.mcmodupdater.common.syncer;
 
 import com.cyhqw.mcmodupdater.common.config.ModUpdaterConfig;
 import com.cyhqw.mcmodupdater.common.http.HttpUtil;
+import com.cyhqw.mcmodupdater.common.modrinth.KerongManifest;
+import com.cyhqw.mcmodupdater.common.modrinth.KerongManifestAdapter;
 import com.cyhqw.mcmodupdater.common.modrinth.ModrinthFile;
 import com.cyhqw.mcmodupdater.common.modrinth.ModrinthIndex;
 import com.cyhqw.mcmodupdater.common.util.HashUtils;
 import com.cyhqw.mcmodupdater.common.util.ModLog;
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import java.io.IOException;
@@ -153,26 +156,42 @@ public final class ModSyncer {
             String downloadUrl = firstDownloadUrl(file);
 
             if (Files.exists(target)) {
-                String localSha1;
-                try {
-                    localSha1 = config.verifyHash && remoteSha1 != null ? HashUtils.sha1(target) : "";
-                } catch (IOException e) {
-                    localSha1 = "";
+                boolean hashMatch = false;
+                String localHash = "";
+                String remoteHashValue = "";
+
+                if (config.verifyHash) {
+                    if (remoteSha1 != null && !remoteSha1.isBlank()) {
+                        remoteHashValue = remoteSha1;
+                        try {
+                            localHash = HashUtils.sha1(target);
+                            hashMatch = localHash.equalsIgnoreCase(remoteSha1);
+                        } catch (IOException ignored) {}
+                    } else {
+                        String remoteMd5 = file.md5();
+                        if (remoteMd5 != null && !remoteMd5.isBlank()) {
+                            remoteHashValue = remoteMd5;
+                            try {
+                                localHash = HashUtils.md5(target);
+                                hashMatch = localHash.equalsIgnoreCase(remoteMd5);
+                            } catch (IOException ignored) {}
+                        }
+                    }
                 }
-                if (config.verifyHash && remoteSha1 != null
-                        && !localSha1.isEmpty()
-                        && localSha1.equalsIgnoreCase(remoteSha1)) {
-                    toKeep.add(new DiffEntry(filename, DiffAction.KEEP, localSha1, remoteSha1,
+
+                if (hashMatch) {
+                    toKeep.add(new DiffEntry(filename, DiffAction.KEEP, localHash, remoteHashValue,
                             target.toFile().length(), remoteSize, downloadUrl));
                 } else {
                     toDownload.add(new DiffEntry(filename, DiffAction.UPDATE,
-                            localSha1, remoteSha1,
+                            localHash, remoteHashValue,
                             target.toFile().length(), remoteSize, downloadUrl));
                 }
                 removeExistingIgnoreCase(existing, filename);
             } else {
+                String remoteHashValue = remoteSha1 != null ? remoteSha1 : (file.md5() != null ? file.md5() : "");
                 toDownload.add(new DiffEntry(filename, DiffAction.ADD,
-                        "", remoteSha1, 0L, remoteSize, downloadUrl));
+                        "", remoteHashValue, 0L, remoteSize, downloadUrl));
             }
         }
 
@@ -372,15 +391,30 @@ public final class ModSyncer {
         }
 
         String expectedSha1 = file.sha1();
+        String expectedMd5 = (expectedSha1 == null) ? file.md5() : null;
 
         if (Files.exists(target)) {
             try {
-                if (!config.verifyHash || expectedSha1 == null) {
+                if (!config.verifyHash) {
                     return new SyncAction(file, ActionStatus.SKIPPED, "exists, hash not verified");
                 }
-                String localSha1 = HashUtils.sha1(target);
-                if (localSha1.equalsIgnoreCase(expectedSha1)) {
-                    return new SyncAction(file, ActionStatus.SKIPPED, "sha1 matches");
+                if (expectedSha1 != null) {
+                    String localSha1 = HashUtils.sha1(target);
+                    if (localSha1.equalsIgnoreCase(expectedSha1)) {
+                        return new SyncAction(file, ActionStatus.SKIPPED, "sha1 matches");
+                    }
+                } else if (expectedMd5 != null) {
+                    try {
+                        String localMd5 = HashUtils.md5(target);
+                        if (localMd5.equalsIgnoreCase(expectedMd5)) {
+                            return new SyncAction(file, ActionStatus.SKIPPED, "md5 matches");
+                        }
+                    } catch (IOException ex) {
+                        return new SyncAction(file, ActionStatus.FAILED, "md5 check failed: " + ex.getMessage());
+                    }
+                } else {
+                    // no hash to compare with, skip by existence
+                    return new SyncAction(file, ActionStatus.SKIPPED, "exists, no hash to verify");
                 }
                 if (config.backupOldMods) {
                     Path bak = target.resolveSibling(filename + ".bak");
@@ -404,11 +438,19 @@ public final class ModSyncer {
                     Files.deleteIfExists(part);
                     HttpUtil.downloadFile(url, part,
                             config.effectiveHttpTimeoutMs(), 0);
-                    if (config.verifyHash && expectedSha1 != null) {
-                        String got = HashUtils.sha1(part);
-                        if (!got.equalsIgnoreCase(expectedSha1)) {
-                            Files.deleteIfExists(part);
-                            throw new IOException("sha1 mismatch after download: got=" + got + " expected=" + expectedSha1);
+                    if (config.verifyHash) {
+                        if (expectedSha1 != null) {
+                            String got = HashUtils.sha1(part);
+                            if (!got.equalsIgnoreCase(expectedSha1)) {
+                                Files.deleteIfExists(part);
+                                throw new IOException("sha1 mismatch after download: got=" + got + " expected=" + expectedSha1);
+                            }
+                        } else if (expectedMd5 != null) {
+                            String got = HashUtils.md5(part);
+                            if (!got.equalsIgnoreCase(expectedMd5)) {
+                                Files.deleteIfExists(part);
+                                throw new IOException("md5 mismatch after download: got=" + got + " expected=" + expectedMd5);
+                            }
                         }
                     }
                     Files.move(part, target, StandardCopyOption.REPLACE_EXISTING);
@@ -468,8 +510,8 @@ public final class ModSyncer {
             if (file.downloads == null || file.downloads.isEmpty()) {
                 return "Manifest entry " + filename + " has no downloads";
             }
-            if (config.verifyHash && (file.sha1() == null || file.sha1().isBlank())) {
-                return "Manifest entry " + filename + " is missing sha1 while hash verification is enabled";
+            if (config.verifyHash && isMissingHash(file)) {
+                return "Manifest entry " + filename + " is missing both sha1 and md5 while hash verification is enabled";
             }
         }
         return null;
@@ -477,7 +519,25 @@ public final class ModSyncer {
 
     private ModrinthIndex fetchManifest(String url) throws IOException, InterruptedException {
         String body = HttpUtil.getString(url, config.effectiveHttpTimeoutMs(), 0);
-        return GSON.fromJson(JsonParser.parseString(body).getAsJsonObject(), ModrinthIndex.class);
+        JsonObject root = JsonParser.parseString(body).getAsJsonObject();
+
+        // 检测格式：Modrinth 标准格式有 formatVersion，Kerong 格式有 modFiles
+        if (root.has("formatVersion")) {
+            // Modrinth 标准格式
+            return GSON.fromJson(root, ModrinthIndex.class);
+        }
+
+        if (root.has("version") && (root.has("modFiles") || root.has("ModFiles"))) {
+            // Kerong 格式 version.json，由适配器转换为标准 ModrinthIndex
+            KerongManifest kerong = GSON.fromJson(root, KerongManifest.class);
+            ModLog.info("[Manifest] Detected Kerong-style manifest (version=%d, name=%s, modFiles=%d)",
+                    kerong.version, kerong.versionName,
+                    kerong.modFiles != null ? kerong.modFiles.size() : 0);
+            return KerongManifestAdapter.adapt(kerong, url);
+        }
+
+        throw new IOException("Unknown manifest format: expected 'formatVersion' (Modrinth) "
+                + "or 'version'+'modFiles' (Kerong). Raw keys: " + root.keySet());
     }
 
     private Map<String, Path> listExistingMods() throws IOException {
@@ -563,6 +623,19 @@ public final class ModSyncer {
 
     private static boolean isJarModName(String filename) {
         return filename.endsWith(JAR_SUFFIX) || filename.endsWith(DISABLED_JAR_SUFFIX);
+    }
+
+    /**
+     * 检查文件条目是否缺少可用的哈希值。
+     * Modrinth 格式用 sha1，Kerong 格式用 md5，两者任一存在即可。
+     */
+    private static boolean isMissingHash(ModrinthFile file) {
+        String sha1 = file.sha1();
+        if (sha1 != null && !sha1.isBlank()) {
+            return false;
+        }
+        String md5 = file.md5();
+        return md5 == null || md5.isBlank();
     }
 
     private static String lower(String value) {

@@ -34,6 +34,29 @@ git push
 
 每次更新 mod 后，递增 `--modpack-version`（如 `1.0` → `1.1`），玩家下次启动就会检测到更新。
 
+## 兼容性
+
+除了标准 Modrinth 整合包格式 (`modrinth.index.json`)，本模组还支持 **Kerong 格式** 的版本清单
+（如 [科融整合包更新器](https://github.com/suzhe014/kerong-modpack-updater) 使用的 `version.json`）。
+
+Kerong 格式与 Modrinth 格式的差异及适配规则：
+
+| 方面 | Modrinth 格式 | Kerong 格式 |
+|------|---------------|-------------|
+| 文件名 | `modrinth.index.json` | `version.json` |
+| 版本字段 | `versionId` (String) | `version` (int) |
+| 显示名 | `name` | `versionName` |
+| 文件列表 | 扁平 `files[]` | 分三组：`modFiles[]` / `configFiles[]` / `resourceFiles[]` |
+| 哈希 | `hashes.sha1` / `hashes.sha512` | `md5` |
+| 下载 URL | `downloads[]`（直接 URL） | 由模组构造为 `{manifest_url}/files/{relativePath}` |
+
+**使用方式**：将配置文件的 `manifestUrl` 设为 Kerong 格式 `version.json`
+的完整 URL（如 `https://kerong.xin/modpack/version.json`），模组会自动检测格式并适配。
+
+**注意**：当前 Kerong 适配主要处理 `modFiles`（模组文件），
+`configFiles` 和 `resourceFiles` 会传递到内部文件列表但暂不参与 mods 目录的差异对比和同步，
+因为本模组的追踪机制目前仅管理 `mods/` 下的 `.jar` 文件。
+
 ## 配置
 
 配置文件位于 `<游戏目录>/config/mcmodupdater/mcmodupdater.properties`：
