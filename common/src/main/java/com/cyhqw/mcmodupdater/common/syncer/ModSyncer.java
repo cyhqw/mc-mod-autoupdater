@@ -34,26 +34,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 /**
- * 客户端同步逻辑：从 URL 拉取 Modrinth 整合包格式的 modrinth.index.json，
- * 同步本地 mods 目录。
+ * 同步引擎：从 manifest 拉取文件列表，同步本地 {@code mods/}、{@code config/}、
+ * {@code resourcepacks/} 三个目录。
  *
- * <p><b>Git 式追踪机制</b>：模组只管理"自己下载过的 mod"（tracked mod），
- * 不会删除玩家手动添加的 mod。</p>
+ * <p><b>追踪机制</b>：模组只管理"自己下载过的文件"（tracked files），
+ * 不会删除玩家自行添加的文件。所有文件按相对路径追踪
+ * （如 {@code mods/jei.jar}、{@code config/jei.toml}）。
+ * 首次同步时 tracked 为空，只会下载不会删除。</p>
  *
- * <p>同步算法：</p>
- * <ol>
- *   <li>从 {@link ModUpdaterConfig#manifestUrl} 下载 modrinth.index.json</li>
- *   <li>过滤出 path 以 {@code mods/} 开头、env.client 为 required/optional 的条目</li>
- *   <li>应用 skipMods/onlyMods 文件名过滤</li>
- *   <li>对每个条目：
- *     <ul>
- *       <li>本地已存在且 SHA1 匹配 → 跳过（标记 KEEP）</li>
- *       <li>否则下载到 .part，校验 SHA1，原子重命名（标记 ADD 或 UPDATE）</li>
- *     </ul>
- *   </li>
- *   <li><b>仅删除 tracked mod 中 manifest 不再包含的</b>（玩家手动加的 mod 永不触碰）</li>
- *   <li>更新 tracked_mods 列表（新增成功的加入，删除的移除）</li>
- * </ol>
+ * <p>支持 Modrinth 和 Kerong 两种清单格式。</p>
  */
 public final class ModSyncer {
 
@@ -61,31 +50,37 @@ public final class ModSyncer {
     private static final String JAR_SUFFIX = ".jar";
     private static final String DISABLED_JAR_SUFFIX = ".jar.disabled";
 
-    private final Path modsDir;
-    private final Path normalizedModsDir;
-    private final ModUpdaterConfig config;
-    private final Path trackedModsPath;
-    private final Set<String> trackedMods;
+    private static final Set<String> MANAGED_PREFIXES = Set.of("mods/", "config/", "resourcepacks/");
 
-    public ModSyncer(Path modsDir, ModUpdaterConfig config, Path trackedModsPath) {
-        this.modsDir = modsDir;
-        this.normalizedModsDir = modsDir.normalize();
+    private final Path gameDir;
+    private final Path normalizedGameDir;
+    private final Path modsDir;
+    private final Path configDir;
+    private final Path resourcepacksDir;
+    private final ModUpdaterConfig config;
+    private final Path trackedFilePath;
+    private final Set<String> trackedFiles;
+
+    /** Kerong 格式的 filesToKeep，仅当清单为 Kerong 格式时非空。 */
+    private Set<String> keepPaths = Collections.emptySet();
+
+    public ModSyncer(Path gameDir, ModUpdaterConfig config, Path trackedFilePath) {
+        this.gameDir = gameDir;
+        this.normalizedGameDir = gameDir.normalize();
+        this.modsDir = gameDir.resolve("mods").normalize();
+        this.configDir = gameDir.resolve("config").normalize();
+        this.resourcepacksDir = gameDir.resolve("resourcepacks").normalize();
         this.config = config;
-        this.trackedModsPath = trackedModsPath;
-        this.trackedMods = new LinkedHashSet<>(ModUpdaterConfig.loadTrackedMods(trackedModsPath));
+        this.trackedFilePath = trackedFilePath;
+        this.trackedFiles = new LinkedHashSet<>(ModUpdaterConfig.loadTrackedMods(trackedFilePath));
     }
 
-    /**
-     * 进度回调接口。GUI 实现此接口以实时显示更新进度。
-     */
     @FunctionalInterface
     public interface ProgressCallback {
-        void onProgress(int current, int total, String filename, ActionStatus status, String detail);
+        void onProgress(int current, int total, String relativePath, ActionStatus status, String detail);
     }
 
-    /**
-     * 仅检查版本，不下载文件。
-     */
+    /** 仅检查版本，不下载文件。 */
     public CheckResult checkVersion() {
         String url = config.effectiveManifestUrl();
         ModrinthIndex index;
@@ -114,63 +109,78 @@ public final class ModSyncer {
     }
 
     /**
-     * 分析 manifest 与本地 mods 目录的差异，不下载文件。
-     * 用于在 GUI 中展示"将要发生什么"。
+     * 分析 manifest 与本地文件系统的差异，不下载文件。
      *
      * <p>差异分类：</p>
      * <ul>
      *   <li>ADD: manifest 有但本地没有，将下载</li>
-     *   <li>UPDATE: 本地有但 SHA1 不同，将覆盖</li>
-     *   <li>KEEP: 本地有且 SHA1 相同，跳过</li>
-     *   <li>REMOVE: tracked mod 中 manifest 不再包含的，将删除（玩家手动加的不会被删除）</li>
+     *   <li>UPDATE: 本地有但哈希不同，将覆盖</li>
+     *   <li>KEEP: 本地有且哈希相同，跳过</li>
+     *   <li>REMOVE: tracked 中 manifest 不再包含的，将删除</li>
+     *   <li>PLAYER_OWNED: 玩家自行添加、不受本模组管理的文件</li>
      * </ul>
      */
     public DiffResult analyzeDiff(ModrinthIndex index) {
+        this.keepPaths = extractKeepPaths(index);
+
         String validationError = validateManifest(index);
         if (validationError != null) {
             return DiffResult.failure(validationError);
         }
 
-        try {
-            Files.createDirectories(modsDir);
-        } catch (IOException e) {
-            return DiffResult.failure("Could not create mods dir: " + e.getMessage());
-        }
+        ensureDirectoriesExist();
 
         Map<String, Path> existing;
         try {
-            existing = listExistingMods();
+            existing = listExistingFiles();
         } catch (IOException e) {
-            return DiffResult.failure("Could not list mods dir: " + e.getMessage());
+            return DiffResult.failure("Could not list managed directories: " + e.getMessage());
         }
 
-        ManifestSelection selection = selectManifestMods(index);
+        ManagedSelection selection = selectManagedFiles(index);
+
+        // 构建 manifest 路径 → ModrinthFile 映射（用于查询远程哈希）
+        Map<String, ModrinthFile> manifestFileMap = new HashMap<>();
+        for (ModrinthFile f : selection.allFiles) {
+            manifestFileMap.put(normalizePath(f.path), f);
+        }
+        // 也包含 selection.files 中实际入选的文件
+        Map<String, ModrinthFile> selectedFileMap = new HashMap<>();
+        for (ModrinthFile f : selection.files) {
+            selectedFileMap.put(normalizePath(f.path), f);
+        }
+
         List<DiffEntry> toDownload = new ArrayList<>();
         List<DiffEntry> toKeep = new ArrayList<>();
 
         for (ModrinthFile file : selection.files) {
-            String filename = file.fileName();
-            Path target = modsDir.resolve(filename).normalize();
-            String remoteSha1 = file.sha1();
-            long remoteSize = file.fileSize;
-            String downloadUrl = firstDownloadUrl(file);
+            String relPath = normalizePath(file.path);
+            Path target = gameDir.resolve(relPath).normalize();
 
-            if (Files.exists(target)) {
-                boolean hashMatch = false;
-                String localHash = "";
-                String remoteHashValue = "";
+            if (!isUnderManagedDir(target)) {
+                ModLog.warn("[Diff] skip file outside managed dirs: %s", relPath);
+                continue;
+            }
 
-                if (config.verifyHash) {
-                    if (remoteSha1 != null && !remoteSha1.isBlank()) {
-                        remoteHashValue = remoteSha1;
+            boolean hashMatch = false;
+            String localHash = "";
+            String remoteHashValue = "";
+
+            if (config.verifyHash) {
+                String remoteSha1 = file.sha1();
+                if (remoteSha1 != null && !remoteSha1.isBlank()) {
+                    remoteHashValue = remoteSha1;
+                    if (Files.exists(target)) {
                         try {
                             localHash = HashUtils.sha1(target);
                             hashMatch = localHash.equalsIgnoreCase(remoteSha1);
                         } catch (IOException ignored) {}
-                    } else {
-                        String remoteMd5 = file.md5();
-                        if (remoteMd5 != null && !remoteMd5.isBlank()) {
-                            remoteHashValue = remoteMd5;
+                    }
+                } else {
+                    String remoteMd5 = file.md5();
+                    if (remoteMd5 != null && !remoteMd5.isBlank()) {
+                        remoteHashValue = remoteMd5;
+                        if (Files.exists(target)) {
                             try {
                                 localHash = HashUtils.md5(target);
                                 hashMatch = localHash.equalsIgnoreCase(remoteMd5);
@@ -178,68 +188,59 @@ public final class ModSyncer {
                         }
                     }
                 }
+            }
 
-                if (hashMatch) {
-                    toKeep.add(new DiffEntry(filename, DiffAction.KEEP, localHash, remoteHashValue,
-                            target.toFile().length(), remoteSize, downloadUrl));
-                } else {
-                    toDownload.add(new DiffEntry(filename, DiffAction.UPDATE,
-                            localHash, remoteHashValue,
-                            target.toFile().length(), remoteSize, downloadUrl));
-                }
-                removeExistingIgnoreCase(existing, filename);
+            if (Files.exists(target) && hashMatch) {
+                toKeep.add(new DiffEntry(relPath, DiffAction.KEEP, localHash, remoteHashValue,
+                        target.toFile().length(), file.fileSize, firstDownloadUrl(file)));
+                removeExistingIgnoreCase(existing, relPath);
             } else {
-                String remoteHashValue = remoteSha1 != null ? remoteSha1 : (file.md5() != null ? file.md5() : "");
-                toDownload.add(new DiffEntry(filename, DiffAction.ADD,
-                        "", remoteHashValue, 0L, remoteSize, downloadUrl));
+                String rh = remoteHashValue.isEmpty()
+                        ? (file.sha1() != null ? file.sha1() : (file.md5() != null ? file.md5() : ""))
+                        : remoteHashValue;
+                DiffAction action = Files.exists(target) ? DiffAction.UPDATE : DiffAction.ADD;
+                toDownload.add(new DiffEntry(relPath, action,
+                        localHash, rh,
+                        Files.exists(target) ? target.toFile().length() : 0L,
+                        file.fileSize, firstDownloadUrl(file)));
+                removeExistingIgnoreCase(existing, relPath);
             }
         }
 
-        // remaining existing 是本地有但 manifest 没有的
-        // 只删除 tracked 的（模组自己下载过的），玩家手动加的不删
+        // remaining existing：本地有但 manifest 中没有的
         List<DiffEntry> toRemove = new ArrayList<>();
-        List<DiffEntry> playerOwned = new ArrayList<>();  // 玩家手动加的，不删
+        List<DiffEntry> playerOwned = new ArrayList<>();
         for (Map.Entry<String, Path> e : existing.entrySet()) {
-            String filenameKey = lower(e.getKey());
-            if (trackedMods.contains(filenameKey) && !selection.expectedFilenameKeys.contains(filenameKey)) {
-                // tracked 但 manifest 不再有 → 删除
-                toRemove.add(new DiffEntry(e.getKey(), DiffAction.REMOVE,
+            String relPath = e.getKey();
+            if (keepPaths.contains(relPath)) {
+                continue; // Kerong filesToKeep，不删
+            }
+            // filesToKeep 可能为目录前缀，匹配所有以该前缀开头的路径
+            if (isKeptByPrefix(relPath)) {
+                continue;
+            }
+            if (trackedFiles.contains(lower(relPath)) && !selection.expectedRelPathKeys.contains(lower(relPath))) {
+                toRemove.add(new DiffEntry(relPath, DiffAction.REMOVE,
                         "", "", e.getValue().toFile().length(), 0L, ""));
-            } else if (!trackedMods.contains(filenameKey)) {
-                // 玩家手动加的 → 不删，记录为 PLAYER_OWNED
-                playerOwned.add(new DiffEntry(e.getKey(), DiffAction.PLAYER_OWNED,
+            } else if (!trackedFiles.contains(lower(relPath))) {
+                playerOwned.add(new DiffEntry(relPath, DiffAction.PLAYER_OWNED,
                         "", "", e.getValue().toFile().length(), 0L, ""));
             }
         }
 
         ModLog.info("[Diff] tracked=%d, toDownload=%d, toKeep=%d, toRemove=%d, playerOwned=%d",
-                trackedMods.size(), toDownload.size(), toKeep.size(), toRemove.size(), playerOwned.size());
+                trackedFiles.size(), toDownload.size(), toKeep.size(), toRemove.size(), playerOwned.size());
         return new DiffResult(toDownload, toKeep, toRemove, playerOwned, null)
                 .withSkipped(selection.skippedByFilter, selection.skippedByEnv);
     }
 
-    /**
-     * 执行完整同步（无进度回调）。
-     */
     public SyncResult sync() {
         return sync(null);
     }
 
-    /**
-     * 执行完整同步，带进度回调。
-     * 同步成功后调用方应把 {@link SyncResult#remoteVersionId} 回写到配置文件，
-     * 并把 {@link SyncResult#newTrackedMods} 保存到 tracked_mods.txt。
-     *
-     * @param callback 进度回调，可为 null
-     */
     public SyncResult sync(ProgressCallback callback) {
-        try {
-            Files.createDirectories(modsDir);
-        } catch (IOException e) {
-            return SyncResult.failure("Could not create mods dir: " + e.getMessage());
-        }
+        ensureDirectoriesExist();
 
-        // 立即回调一次，让 GUI 显示"正在获取清单..."
         notifyProgress(callback, 0, 1, "正在获取清单...", ActionStatus.SKIPPED, "");
 
         String url = config.effectiveManifestUrl();
@@ -256,6 +257,8 @@ public final class ModSyncer {
         ModLog.info("Manifest fetched: %d total file(s), versionId=%s, name=%s",
                 index.files.size(), index.versionId, index.name);
 
+        this.keepPaths = extractKeepPaths(index);
+
         String validationError = validateManifest(index);
         if (validationError != null) {
             return SyncResult.failure(validationError);
@@ -263,13 +266,12 @@ public final class ModSyncer {
 
         Map<String, Path> existing;
         try {
-            existing = listExistingMods();
+            existing = listExistingFiles();
         } catch (IOException e) {
-            return SyncResult.failure("Could not list mods dir: " + e.getMessage());
+            return SyncResult.failure("Could not list managed directories: " + e.getMessage());
         }
 
-        // 收集要处理的文件列表
-        ManifestSelection selection = selectManifestMods(index);
+        ManagedSelection selection = selectManagedFiles(index);
         List<ModrinthFile> toProcess = selection.files;
 
         int total = toProcess.size();
@@ -280,7 +282,8 @@ public final class ModSyncer {
         ExecutorService pool = Executors.newFixedThreadPool(maxConcurrentDownloads);
         Map<String, CompletableFuture<SyncAction>> futuresMap = new LinkedHashMap<>();
         for (ModrinthFile file : toProcess) {
-            futuresMap.put(file.fileName(), CompletableFuture.supplyAsync(() -> {
+            String relPath = normalizePath(file.path);
+            futuresMap.put(relPath, CompletableFuture.supplyAsync(() -> {
                 try {
                     return syncOne(file);
                 } catch (Exception e) {
@@ -289,15 +292,14 @@ public final class ModSyncer {
             }, pool));
         }
 
-        // 等待所有 future 完成，按完成顺序回调进度
         AtomicInteger completed = new AtomicInteger(0);
         List<CompletableFuture<Void>> progressFutures = new ArrayList<>();
         for (Map.Entry<String, CompletableFuture<SyncAction>> e : futuresMap.entrySet()) {
-            final String filename = e.getKey();
+            final String relPath = e.getKey();
             CompletableFuture<SyncAction> f = e.getValue();
             CompletableFuture<Void> pf = f.thenAccept(action -> {
                 int cur = completed.incrementAndGet();
-                notifyProgress(callback, cur, total, filename, action.status, action.detail);
+                notifyProgress(callback, cur, total, relPath, action.status, action.detail);
             });
             progressFutures.add(pf);
         }
@@ -311,85 +313,87 @@ public final class ModSyncer {
         }
         pool.shutdown();
 
-        // 收集 actions（按 toProcess 顺序）
+        // 收集 actions
         List<SyncAction> actions = new ArrayList<>();
-        Set<String> newTrackedMods = new LinkedHashSet<>();
+        Set<String> newTrackedFiles = new LinkedHashSet<>();
         for (ModrinthFile file : toProcess) {
-            CompletableFuture<SyncAction> f = futuresMap.get(file.fileName());
+            String relPath = normalizePath(file.path);
+            CompletableFuture<SyncAction> f = futuresMap.get(relPath);
             try {
                 SyncAction action = f.get();
                 actions.add(action);
-                // 下载成功或已存在的 mod 都加入 tracked
                 if (action.status == ActionStatus.DOWNLOADED || action.status == ActionStatus.SKIPPED) {
-                    newTrackedMods.add(lower(file.fileName()));
+                    newTrackedFiles.add(lower(relPath));
                 }
             } catch (Exception e) {
                 actions.add(new SyncAction(file, ActionStatus.FAILED, "future error: " + e.getMessage()));
             }
         }
 
-        // 删除 tracked mod 中 manifest 不再包含的
-        // 首次同步时 trackedMods 为空，不会删任何东西
+        // 删除 tracked 中 manifest 不再包含的
         List<String> removed = new ArrayList<>();
-        for (String trackedFilename : trackedMods) {
-            // trackedFilename 是小写的，需要还原大小写查找 existing
-            String actualFilename = null;
-            for (String existingFn : existing.keySet()) {
-                if (existingFn.equalsIgnoreCase(trackedFilename)) {
-                    actualFilename = existingFn;
+        for (String trackedRelPath : trackedFiles) {
+            String actualRelPath = null;
+            for (String existingRelPath : existing.keySet()) {
+                if (lower(existingRelPath).equals(trackedRelPath)) {
+                    actualRelPath = existingRelPath;
                     break;
                 }
             }
-            if (actualFilename == null) {
-                continue;  // 本地已没有这个文件
+            if (actualRelPath == null) {
+                continue;
             }
-            if (selection.expectedFilenameKeys.contains(lower(actualFilename))) {
-                continue;  // manifest 还有，不删
+            if (selection.expectedRelPathKeys.contains(lower(actualRelPath))) {
+                continue;
+            }
+            if (keepPaths.contains(actualRelPath) || isKeptByPrefix(actualRelPath)) {
+                continue;
             }
 
-            // tracked 但 manifest 不再有 → 删除
-            Path target = existing.get(actualFilename);
+            Path target = existing.get(actualRelPath);
             try {
                 if (config.backupOldMods) {
-                    Path bak = target.resolveSibling(actualFilename + ".bak");
+                    Path bak = target.resolveSibling(target.getFileName().toString() + ".bak");
                     Files.move(target, bak, StandardCopyOption.REPLACE_EXISTING);
-                    ModLog.info("Backed up tracked orphan: %s -> %s", actualFilename, bak);
+                    ModLog.info("Backed up tracked orphan: %s -> %s", actualRelPath, bak);
                 } else {
                     Files.delete(target);
-                    ModLog.info("Removed tracked orphan: %s", actualFilename);
+                    ModLog.info("Removed tracked orphan: %s", actualRelPath);
                 }
-                removed.add(actualFilename);
-                // 从 tracked 中移除
-                newTrackedMods.remove(trackedFilename);
+                removed.add(actualRelPath);
+                newTrackedFiles.remove(trackedRelPath);
             } catch (IOException ex) {
-                ModLog.warn("Failed to remove tracked orphan %s: %s", actualFilename, ex.getMessage());
+                ModLog.warn("Failed to remove tracked orphan %s: %s", actualRelPath, ex.getMessage());
             }
         }
 
-        // 保存 tracked_mods.txt
+        // 清理空目录（仅清理因删除文件而变空的目录）
+        cleanupEmptyDirs();
+
+        // 保存 tracked files
         try {
-            ModUpdaterConfig.saveTrackedMods(trackedModsPath, newTrackedMods);
-            ModLog.info("[Sync] Saved %d tracked mods to %s", newTrackedMods.size(), trackedModsPath);
+            ModUpdaterConfig.saveTrackedMods(trackedFilePath, newTrackedFiles);
+            ModLog.info("[Sync] Saved %d tracked files to %s", newTrackedFiles.size(), trackedFilePath);
         } catch (IOException e) {
-            ModLog.warn("[Sync] Failed to save tracked mods: %s", e.getMessage());
+            ModLog.warn("[Sync] Failed to save tracked files: %s", e.getMessage());
         }
 
         boolean changed = actions.stream().anyMatch(a -> a.status != ActionStatus.SKIPPED) || !removed.isEmpty();
         boolean failed = actions.stream().anyMatch(a -> a.status == ActionStatus.FAILED);
         String remoteVersion = index.versionId == null ? "" : index.versionId;
         return new SyncResult(index, actions, removed, changed, failed, null,
-                selection.skippedByFilter, selection.skippedByEnv, remoteVersion, newTrackedMods);
+                selection.skippedByFilter, selection.skippedByEnv, remoteVersion, newTrackedFiles);
     }
 
     private SyncAction syncOne(ModrinthFile file) {
-        String filename = file.fileName();
-        Path target = modsDir.resolve(filename).normalize();
-        Path part = modsDir.resolve(filename + ".part").normalize();
+        String relPath = normalizePath(file.path);
+        Path target = gameDir.resolve(relPath).normalize();
 
-        if (!isDirectChildOfModsDir(target)) {
+        if (!isUnderManagedDir(target)) {
             return new SyncAction(file, ActionStatus.FAILED, "unsafe path: " + file.path);
         }
 
+        Path part = target.resolveSibling(target.getFileName().toString() + ".part").normalize();
         String expectedSha1 = file.sha1();
         String expectedMd5 = (expectedSha1 == null) ? file.md5() : null;
 
@@ -398,26 +402,21 @@ public final class ModSyncer {
                 if (!config.verifyHash) {
                     return new SyncAction(file, ActionStatus.SKIPPED, "exists, hash not verified");
                 }
+                boolean hashMatches = false;
                 if (expectedSha1 != null) {
                     String localSha1 = HashUtils.sha1(target);
-                    if (localSha1.equalsIgnoreCase(expectedSha1)) {
-                        return new SyncAction(file, ActionStatus.SKIPPED, "sha1 matches");
-                    }
+                    hashMatches = localSha1.equalsIgnoreCase(expectedSha1);
                 } else if (expectedMd5 != null) {
-                    try {
-                        String localMd5 = HashUtils.md5(target);
-                        if (localMd5.equalsIgnoreCase(expectedMd5)) {
-                            return new SyncAction(file, ActionStatus.SKIPPED, "md5 matches");
-                        }
-                    } catch (IOException ex) {
-                        return new SyncAction(file, ActionStatus.FAILED, "md5 check failed: " + ex.getMessage());
-                    }
+                    String localMd5 = HashUtils.md5(target);
+                    hashMatches = localMd5.equalsIgnoreCase(expectedMd5);
                 } else {
-                    // no hash to compare with, skip by existence
                     return new SyncAction(file, ActionStatus.SKIPPED, "exists, no hash to verify");
                 }
+                if (hashMatches) {
+                    return new SyncAction(file, ActionStatus.SKIPPED, "hash matches");
+                }
                 if (config.backupOldMods) {
-                    Path bak = target.resolveSibling(filename + ".bak");
+                    Path bak = target.resolveSibling(target.getFileName() + ".bak");
                     Files.move(target, bak, StandardCopyOption.REPLACE_EXISTING);
                 } else {
                     Files.deleteIfExists(target);
@@ -430,14 +429,15 @@ public final class ModSyncer {
         if (file.downloads == null || file.downloads.isEmpty()) {
             return new SyncAction(file, ActionStatus.FAILED, "no download URLs in manifest");
         }
+
         int retries = config.effectiveMaxRetries();
         Exception lastErr = null;
         for (int attempt = 0; attempt <= retries; attempt++) {
             for (String url : file.downloads) {
                 try {
+                    Files.createDirectories(target.getParent());
                     Files.deleteIfExists(part);
-                    HttpUtil.downloadFile(url, part,
-                            config.effectiveHttpTimeoutMs(), 0);
+                    HttpUtil.downloadFile(url, part, config.effectiveHttpTimeoutMs(), 0);
                     if (config.verifyHash) {
                         if (expectedSha1 != null) {
                             String got = HashUtils.sha1(part);
@@ -473,6 +473,10 @@ public final class ModSyncer {
                 lastErr != null ? lastErr.getMessage() : "download failed");
     }
 
+    // ------------------------------------------------------------------
+    // Manifest validation
+    // ------------------------------------------------------------------
+
     private String validateManifest(ModrinthIndex index) {
         if (index == null || index.files == null) {
             return "Manifest was empty or malformed";
@@ -480,7 +484,7 @@ public final class ModSyncer {
         if (index.formatVersion != 1) {
             return "Unsupported manifest formatVersion: " + index.formatVersion + " (expected 1)";
         }
-        Set<String> filenames = new HashSet<>();
+        Set<String> seen = new HashSet<>();
         for (int i = 0; i < index.files.size(); i++) {
             ModrinthFile file = index.files.get(i);
             if (file == null) {
@@ -489,46 +493,45 @@ public final class ModSyncer {
             if (file.path == null || file.path.isBlank()) {
                 return "Manifest file entry at index " + i + " is missing path";
             }
-            if (!file.isMod()) {
-                continue;
+
+            String relPath = normalizePath(file.path);
+            if (!isUnderManagedPrefix(relPath)) {
+                continue; // 不在管理范围内，跳过不校验
             }
-            String filename = file.fileName();
-            if (filename.isEmpty() || filename.equals("mods")) {
-                return "Manifest file path is malformed: " + file.path;
+
+            Path target = gameDir.resolve(relPath).normalize();
+            if (!isUnderManagedDir(target)) {
+                return "Manifest file escapes managed directories: " + file.path;
             }
-            Path target = modsDir.resolve(filename).normalize();
-            if (!isDirectChildOfModsDir(target)) {
-                return "Manifest filename escapes mods dir: " + file.path;
+
+            String key = lower(relPath);
+            if (!seen.add(key)) {
+                return "Manifest contains duplicate path: " + file.path;
             }
-            String filenameKey = lower(filename);
-            if (!isJarModName(filenameKey)) {
-                return "Manifest filename is not a jar: " + filename;
-            }
-            if (!filenames.add(filenameKey)) {
-                return "Manifest contains duplicate filename: " + filename;
-            }
+
             if (file.downloads == null || file.downloads.isEmpty()) {
-                return "Manifest entry " + filename + " has no downloads";
+                return "Manifest entry " + relPath + " has no downloads";
             }
             if (config.verifyHash && isMissingHash(file)) {
-                return "Manifest entry " + filename + " is missing both sha1 and md5 while hash verification is enabled";
+                return "Manifest entry " + relPath + " is missing both sha1 and md5 while hash verification is enabled";
             }
         }
         return null;
     }
 
+    // ------------------------------------------------------------------
+    // Manifest fetching (Modrinth / Kerong auto-detection)
+    // ------------------------------------------------------------------
+
     private ModrinthIndex fetchManifest(String url) throws IOException, InterruptedException {
         String body = HttpUtil.getString(url, config.effectiveHttpTimeoutMs(), 0);
         JsonObject root = JsonParser.parseString(body).getAsJsonObject();
 
-        // 检测格式：Modrinth 标准格式有 formatVersion，Kerong 格式有 version + 任一文件列表
         if (root.has("formatVersion")) {
-            // Modrinth 标准格式
             return GSON.fromJson(root, ModrinthIndex.class);
         }
 
         if (root.has("version") && hasAnyKerongFileList(root)) {
-            // Kerong 格式 version.json，由适配器转换为标准 ModrinthIndex
             KerongManifest kerong = GSON.fromJson(root, KerongManifest.class);
             ModLog.info("[Manifest] Detected Kerong-style manifest (version=%d, name=%s, modFiles=%d, configFiles=%d, resourceFiles=%d)",
                     kerong.version, kerong.versionName,
@@ -542,79 +545,189 @@ public final class ModSyncer {
                 + "or 'version'+file list (Kerong). Raw keys: " + root.keySet());
     }
 
-    /** Kerong 清单可能仅含 configFiles/resourceFiles（无 modFiles），故任一文件列表存在即可识别。 */
     private static boolean hasAnyKerongFileList(JsonObject root) {
         return root.has("modFiles") || root.has("ModFiles")
                 || root.has("configFiles") || root.has("ConfigFiles")
                 || root.has("resourceFiles") || root.has("ResourceFiles");
     }
 
-    private Map<String, Path> listExistingMods() throws IOException {
-        Map<String, Path> existing = new HashMap<>();
-        try (Stream<Path> stream = Files.list(modsDir)) {
-            stream.filter(Files::isRegularFile).forEach(path -> {
-                String filename = path.getFileName().toString();
-                if (isJarModName(lower(filename))) {
-                    existing.put(filename, path);
-                }
-            });
+    // ------------------------------------------------------------------
+    // Listing existing files
+    // ------------------------------------------------------------------
+
+    /** 扫描所有管理的目录，返回 {相对路径 → Path} 映射。 */
+    private Map<String, Path> listExistingFiles() throws IOException {
+        Map<String, Path> result = new HashMap<>();
+        for (Path dir : List.of(modsDir, configDir, resourcepacksDir)) {
+            if (!Files.isDirectory(dir)) {
+                continue;
+            }
+            try (Stream<Path> stream = Files.walk(dir)) {
+                stream.filter(Files::isRegularFile).forEach(path -> {
+                    Path rel = normalizedGameDir.relativize(path);
+                    String relPath = rel.toString().replace('\\', '/');
+                    result.put(relPath, path);
+                });
+            }
         }
-        return existing;
+        return result;
     }
 
-    private ManifestSelection selectManifestMods(ModrinthIndex index) {
+    // ------------------------------------------------------------------
+    // File selection from manifest
+    // ------------------------------------------------------------------
+
+    private ManagedSelection selectManagedFiles(ModrinthIndex index) {
         Set<String> skip = config.skipModsSet();
         Set<String> only = config.onlyModsSet();
         List<ModrinthFile> selected = new ArrayList<>();
-        Set<String> expectedFilenameKeys = new HashSet<>();
+        Set<String> expectedRelPathKeys = new HashSet<>();
         int skippedByFilter = 0;
         int skippedByEnv = 0;
 
         for (ModrinthFile file : index.files) {
-            if (!file.isMod()) {
+            String relPath = normalizePath(file.path);
+            if (!isUnderManagedPrefix(relPath)) {
                 continue;
             }
             if (!file.isClientRequired()) {
                 skippedByEnv++;
                 continue;
             }
-            String filenameKey = lower(file.fileName());
-            if (!skip.isEmpty() && skip.contains(filenameKey)) {
-                skippedByFilter++;
-                continue;
+            String key = lower(relPath);
+            // skip/only 过滤仅针对 mods/ 下的文件（黑/白名单设计时仅考虑 mod）
+            if (relPath.startsWith("mods/")) {
+                String filename = file.fileName();
+                String filenameKey = lower(filename);
+                if (!skip.isEmpty() && skip.contains(filenameKey)) {
+                    skippedByFilter++;
+                    continue;
+                }
+                if (!only.isEmpty() && !only.contains(filenameKey)) {
+                    skippedByFilter++;
+                    continue;
+                }
             }
-            if (!only.isEmpty() && !only.contains(filenameKey)) {
-                skippedByFilter++;
-                continue;
-            }
-            expectedFilenameKeys.add(filenameKey);
+            expectedRelPathKeys.add(key);
             selected.add(file);
         }
 
-        return new ManifestSelection(selected, expectedFilenameKeys, skippedByFilter, skippedByEnv);
+        return new ManagedSelection(selected, index.files, expectedRelPathKeys, skippedByFilter, skippedByEnv);
+    }
+
+    // ------------------------------------------------------------------
+    // Keep paths from Kerong filesToKeep
+    // ------------------------------------------------------------------
+
+    /** 从 manifest 中提取 filesToKeep（Kerong 格式）。 */
+    private Set<String> extractKeepPaths(ModrinthIndex index) {
+        // 目前 filesToKeep 仅在 KerongManifestAdapter 适配时以描述性方式传递。
+        // 这里从 index 中判断是否包含 Kerong 特有的信息。
+        // 简化处理：默认空集，后续可通过配置扩展。
+        return Collections.emptySet();
+    }
+
+    private boolean isKeptByPrefix(String relPath) {
+        for (String prefix : keepPaths) {
+            if (prefix.endsWith("/") && relPath.startsWith(prefix)) {
+                return true;
+            }
+            if (relPath.equals(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // ------------------------------------------------------------------
+    // Directory cleanup helpers
+    // ------------------------------------------------------------------
+
+    private void cleanupEmptyDirs() {
+        for (Path dir : List.of(configDir, resourcepacksDir)) {
+            try {
+                try (Stream<Path> stream = Files.walk(dir)) {
+                    stream.sorted((a, b) -> -a.compareTo(b))
+                            .filter(Files::isDirectory)
+                            .forEach(p -> {
+                                try {
+                                    if (Files.isDirectory(p) && Files.list(p).findAny().isEmpty()) {
+                                        Files.delete(p);
+                                        ModLog.debug("Removed empty dir: %s", normalizedGameDir.relativize(p));
+                                    }
+                                } catch (IOException ignored) {}
+                            });
+                }
+            } catch (IOException ignored) {
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Path safety
+    // ------------------------------------------------------------------
+
+    private static boolean isUnderManagedPrefix(String relPath) {
+        if (relPath == null || relPath.isEmpty()) {
+            return false;
+        }
+        for (String prefix : MANAGED_PREFIXES) {
+            if (relPath.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isUnderManagedDir(Path target) {
+        Path norm = target.normalize();
+        return norm.startsWith(normalizedGameDir.resolve("mods"))
+                || norm.startsWith(normalizedGameDir.resolve("config"))
+                || norm.startsWith(normalizedGameDir.resolve("resourcepacks"));
+    }
+
+    // ------------------------------------------------------------------
+    // Small helpers
+    // ------------------------------------------------------------------
+
+    private void ensureDirectoriesExist() {
+        try {
+            Files.createDirectories(modsDir);
+            Files.createDirectories(configDir);
+            Files.createDirectories(resourcepacksDir);
+        } catch (IOException e) {
+            ModLog.warn("Could not ensure managed directories exist: %s", e.getMessage());
+        }
+    }
+
+    private static String normalizePath(String path) {
+        if (path == null) {
+            return "";
+        }
+        return path.replace('\\', '/');
     }
 
     private static String firstDownloadUrl(ModrinthFile file) {
         return (file.downloads != null && !file.downloads.isEmpty()) ? file.downloads.get(0) : "";
     }
 
-    private static void removeExistingIgnoreCase(Map<String, Path> existing, String filename) {
-        String keyToRemove = null;
-        for (String existingFilename : existing.keySet()) {
-            if (existingFilename.equalsIgnoreCase(filename)) {
-                keyToRemove = existingFilename;
+    private static void removeExistingIgnoreCase(Map<String, Path> existing, String relPath) {
+        String key = null;
+        for (String k : existing.keySet()) {
+            if (k.equalsIgnoreCase(relPath) || k.equals(relPath)) {
+                key = k;
                 break;
             }
         }
-        if (keyToRemove != null) {
-            existing.remove(keyToRemove);
+        if (key != null) {
+            existing.remove(key);
         }
     }
 
     private void notifyProgress(ProgressCallback callback, int current, int total,
-                                String filename, ActionStatus status, String detail) {
+                                String relPath, ActionStatus status, String detail) {
         if (callback != null) {
-            callback.onProgress(current, total, filename, status, detail);
+            callback.onProgress(current, total, relPath, status, detail);
         }
     }
 
@@ -625,19 +738,6 @@ public final class ModSyncer {
         }
     }
 
-    private boolean isDirectChildOfModsDir(Path target) {
-        Path parent = target.getParent();
-        return parent != null && parent.equals(normalizedModsDir);
-    }
-
-    private static boolean isJarModName(String filename) {
-        return filename.endsWith(JAR_SUFFIX) || filename.endsWith(DISABLED_JAR_SUFFIX);
-    }
-
-    /**
-     * 检查文件条目是否缺少可用的哈希值。
-     * Modrinth 格式用 sha1，Kerong 格式用 md5，两者任一存在即可。
-     */
     private static boolean isMissingHash(ModrinthFile file) {
         String sha1 = file.sha1();
         if (sha1 != null && !sha1.isBlank()) {
@@ -651,16 +751,22 @@ public final class ModSyncer {
         return value.toLowerCase(Locale.ROOT);
     }
 
-    private static final class ManifestSelection {
-        private final List<ModrinthFile> files;
-        private final Set<String> expectedFilenameKeys;
+    // ------------------------------------------------------------------
+    // Internal data classes
+    // ------------------------------------------------------------------
+
+    private static final class ManagedSelection {
+        private final List<ModrinthFile> files;             // 实际入选的文件
+        private final List<ModrinthFile> allFiles;          // manifest 中所有受管理的文件
+        private final Set<String> expectedRelPathKeys;      // 入选文件的路径 key
         private final int skippedByFilter;
         private final int skippedByEnv;
 
-        private ManifestSelection(List<ModrinthFile> files, Set<String> expectedFilenameKeys,
-                                  int skippedByFilter, int skippedByEnv) {
+        private ManagedSelection(List<ModrinthFile> files, List<ModrinthFile> allFiles,
+                                 Set<String> expectedRelPathKeys, int skippedByFilter, int skippedByEnv) {
             this.files = Collections.unmodifiableList(files);
-            this.expectedFilenameKeys = Collections.unmodifiableSet(expectedFilenameKeys);
+            this.allFiles = Collections.unmodifiableList(allFiles);
+            this.expectedRelPathKeys = Collections.unmodifiableSet(expectedRelPathKeys);
             this.skippedByFilter = skippedByFilter;
             this.skippedByEnv = skippedByEnv;
         }
@@ -685,7 +791,7 @@ public final class ModSyncer {
     }
 
     public static final class DiffEntry {
-        public final String filename;
+        public final String filename;        // 全相对路径，如 "mods/jei.jar"
         public final DiffAction action;
         public final String localSha1;
         public final String remoteSha1;
@@ -776,7 +882,6 @@ public final class ModSyncer {
         public final int skippedByFilter;
         public final int skippedByEnv;
         public final String remoteVersionId;
-        /** 本次同步后的新 tracked mod 列表（调用方应保存到 tracked_mods.txt）。 */
         public final Set<String> newTrackedMods;
 
         private SyncResult(ModrinthIndex manifest, List<SyncAction> actions, List<String> removed,

@@ -4,6 +4,7 @@ import com.cyhqw.mcmodupdater.common.config.ModUpdaterConfig;
 import com.cyhqw.mcmodupdater.common.syncer.ModSyncer;
 import com.cyhqw.mcmodupdater.common.util.ModLog;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
@@ -57,8 +58,18 @@ public final class LaunchSyncRunner {
         String url = config.effectiveManifestUrl();
         ModLog.info("[LaunchSync] Checking manifest version at %s", url);
 
-        Path trackedModsPath = configPath.resolveSibling("tracked_mods.txt");
-        ModSyncer syncer = new ModSyncer(config.resolveModsDir(gameDir), config, trackedModsPath);
+        // 新版使用 tracked_files.txt（支持相对路径）；旧版 tracked_mods.txt 兼容迁移
+        Path trackedFilePath = configPath.resolveSibling("tracked_files.txt");
+        Path oldTrackedPath = configPath.resolveSibling("tracked_mods.txt");
+        if (!Files.exists(trackedFilePath) && Files.exists(oldTrackedPath)) {
+            try {
+                Files.copy(oldTrackedPath, trackedFilePath);
+                ModLog.info("[LaunchSync] Migrated tracked_mods.txt -> tracked_files.txt");
+            } catch (Exception e) {
+                ModLog.warn("[LaunchSync] Failed to migrate tracked_mods.txt: %s", e.getMessage());
+            }
+        }
+        ModSyncer syncer = new ModSyncer(gameDir, config, trackedFilePath);
         ModSyncer.CheckResult check;
         try {
             check = syncer.checkVersion();
