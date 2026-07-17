@@ -139,7 +139,7 @@ public final class UpdateDialog {
         root.add(statusLabel);
         root.add(vstrut(8));
 
-        // 3. 差异摘要
+        // 3. 差异摘要（按类型分组：mods / config / resourcepacks）
         int addCount = 0, updateCount = 0, removeCount = 0, keepCount = 0, playerOwnedCount = 0;
         for (DiffEntry e : diff.toDownload) {
             if (e.action == DiffAction.ADD) {
@@ -151,13 +151,33 @@ public final class UpdateDialog {
         removeCount = diff.toRemove.size();
         keepCount = diff.toKeep.size();
         playerOwnedCount = diff.playerOwned.size();
-        summaryLabel = new JLabel(String.format(
-                "<html>差异摘要: <font color='#2e7d32'>新增 %d</font> / "
+
+        // 按目录前缀统计各类型的 add/update/remove/keep
+        int[] modsStat = countByCategory(diff, "mods/");
+        int[] configStat = countByCategory(diff, "config/");
+        int[] resStat = countByCategory(diff, "resourcepacks/");
+
+        StringBuilder summary = new StringBuilder("<html>差异摘要: ");
+        summary.append(String.format(
+                "<font color='#2e7d32'>新增 %d</font> / "
                 + "<font color='#1565c0'>更新 %d</font> / "
                 + "<font color='#c62828'>删除 %d</font> / "
                 + "<font color='#616161'>保留 %d</font> / "
-                + "<font color='#9e9e9e'>玩家 mod %d（不受影响）</font></html>",
+                + "<font color='#9e9e9e'>玩家文件 %d（不受影响）</font>",
                 addCount, updateCount, removeCount, keepCount, playerOwnedCount));
+        // 分类明细（仅当某类型有变动时显示）
+        summary.append("<br><font size='2'>");
+        if (modsStat[0] + modsStat[1] + modsStat[2] + modsStat[3] > 0) {
+            summary.append(String.format("mods: +%d ~%d -%d ✓%d　", modsStat[0], modsStat[1], modsStat[2], modsStat[3]));
+        }
+        if (configStat[0] + configStat[1] + configStat[2] + configStat[3] > 0) {
+            summary.append(String.format("config: +%d ~%d -%d ✓%d　", configStat[0], configStat[1], configStat[2], configStat[3]));
+        }
+        if (resStat[0] + resStat[1] + resStat[2] + resStat[3] > 0) {
+            summary.append(String.format("resourcepacks: +%d ~%d -%d ✓%d", resStat[0], resStat[1], resStat[2], resStat[3]));
+        }
+        summary.append("</font></html>");
+        summaryLabel = new JLabel(summary.toString());
         summaryLabel.setAlignmentX(0f);
         root.add(summaryLabel);
         root.add(vstrut(8));
@@ -345,9 +365,38 @@ public final class UpdateDialog {
                 new Dimension(0, height), new Dimension(0, height), new Dimension(0, height));
     }
 
+    /**
+     * 按目录前缀统计某类型的 add/update/remove/keep 数量。
+     * @return int[4] = {add, update, remove, keep}
+     */
+    private static int[] countByCategory(DiffResult diff, String prefix) {
+        int[] stat = new int[4];
+        for (DiffEntry e : diff.toDownload) {
+            if (!e.filename.startsWith(prefix)) continue;
+            if (e.action == DiffAction.ADD) stat[0]++;
+            else if (e.action == DiffAction.UPDATE) stat[1]++;
+        }
+        for (DiffEntry e : diff.toRemove) {
+            if (e.filename.startsWith(prefix)) stat[2]++;
+        }
+        for (DiffEntry e : diff.toKeep) {
+            if (e.filename.startsWith(prefix)) stat[3]++;
+        }
+        return stat;
+    }
+
+    /** 从文件路径提取类型标签（mods/config/resourcepacks/其他）。 */
+    private static String categoryLabel(String path) {
+        if (path == null) return "其他";
+        if (path.startsWith("mods/")) return "mods";
+        if (path.startsWith("config/")) return "config";
+        if (path.startsWith("resourcepacks/")) return "resourcepacks";
+        return "其他";
+    }
+
     /** 差异表格的数据模型。 */
     private static final class DiffTableModel extends AbstractTableModel {
-        private final String[] columns = {"#", "文件名", "操作", "本地大小", "远端大小", "URL"};
+        private final String[] columns = {"#", "类型", "文件名", "操作", "本地大小", "远端大小", "URL"};
         private final List<DiffEntry> rows;
 
         DiffTableModel(DiffResult diff) {
@@ -380,14 +429,16 @@ public final class UpdateDialog {
                 case 0:
                     return row + 1;
                 case 1:
-                    return e.filename;
+                    return categoryLabel(e.filename);
                 case 2:
-                    return actionLabel(e.action);
+                    return e.filename;
                 case 3:
-                    return e.localSize > 0 ? humanSize(e.localSize) : "-";
+                    return actionLabel(e.action);
                 case 4:
-                    return e.remoteSize > 0 ? humanSize(e.remoteSize) : "-";
+                    return e.localSize > 0 ? humanSize(e.localSize) : "-";
                 case 5:
+                    return e.remoteSize > 0 ? humanSize(e.remoteSize) : "-";
+                case 6:
                     return e.downloadUrl != null ? e.downloadUrl : "";
                 default:
                     return "";

@@ -21,21 +21,23 @@ import java.util.Set;
 public final class ModUpdaterConfig {
 
     /**
-     * 指向 modrinth.index.json 的 URL（HTTP/HTTPS）。
-     * <p><b>必填项</b>：本模组不再内置默认清单地址，必须在此填写一个可访问的
-     * modrinth.index.json URL，否则同步不会执行。整合包作者可把生成好的清单
-     * 托管在任意静态资源服务（GitHub raw、对象存储、自建站点等）上。</p>
+     * 指向整合包清单的 URL（HTTP/HTTPS）。
+     * 留空时使用 {@link #DEFAULT_MANIFEST_URL}（默认走 Kerong 官网，拉取 Kerong 格式的 version.json）。
+     * 玩家可自行填写其它 URL 覆盖默认值。
      */
     public String manifestUrl = "";
 
-    /** 获取实际使用的 manifest URL（已 trim，无内置回退）。 */
-    public String effectiveManifestUrl() {
-        return (manifestUrl != null) ? manifestUrl.trim() : "";
-    }
+    /**
+     * 默认 manifest URL：指向 Kerong 官网的 version.json。
+     * 本分支（Kerong 版）开箱即用——不配置 manifestUrl 时自动从 Kerong 官网
+     * 拉取 Kerong 格式的清单，由 {@code KerongManifestAdapter} 转换后同步。
+     */
+    public static final String DEFAULT_MANIFEST_URL =
+            "https://kerong.xin/modpack/version.json";
 
-    /** 是否已配置有效的 manifest URL。 */
-    public boolean isManifestUrlConfigured() {
-        return !effectiveManifestUrl().isBlank();
+    /** 获取实际使用的 manifest URL（用户未配置时回退到 Kerong 官网默认）。 */
+    public String effectiveManifestUrl() {
+        return (manifestUrl != null && !manifestUrl.isBlank()) ? manifestUrl : DEFAULT_MANIFEST_URL;
     }
 
     /**
