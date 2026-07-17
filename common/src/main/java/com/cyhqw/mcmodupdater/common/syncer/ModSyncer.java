@@ -521,23 +521,32 @@ public final class ModSyncer {
         String body = HttpUtil.getString(url, config.effectiveHttpTimeoutMs(), 0);
         JsonObject root = JsonParser.parseString(body).getAsJsonObject();
 
-        // 检测格式：Modrinth 标准格式有 formatVersion，Kerong 格式有 modFiles
+        // 检测格式：Modrinth 标准格式有 formatVersion，Kerong 格式有 version + 任一文件列表
         if (root.has("formatVersion")) {
             // Modrinth 标准格式
             return GSON.fromJson(root, ModrinthIndex.class);
         }
 
-        if (root.has("version") && (root.has("modFiles") || root.has("ModFiles"))) {
+        if (root.has("version") && hasAnyKerongFileList(root)) {
             // Kerong 格式 version.json，由适配器转换为标准 ModrinthIndex
             KerongManifest kerong = GSON.fromJson(root, KerongManifest.class);
-            ModLog.info("[Manifest] Detected Kerong-style manifest (version=%d, name=%s, modFiles=%d)",
+            ModLog.info("[Manifest] Detected Kerong-style manifest (version=%d, name=%s, modFiles=%d, configFiles=%d, resourceFiles=%d)",
                     kerong.version, kerong.versionName,
-                    kerong.modFiles != null ? kerong.modFiles.size() : 0);
+                    kerong.modFiles != null ? kerong.modFiles.size() : 0,
+                    kerong.configFiles != null ? kerong.configFiles.size() : 0,
+                    kerong.resourceFiles != null ? kerong.resourceFiles.size() : 0);
             return KerongManifestAdapter.adapt(kerong, url);
         }
 
         throw new IOException("Unknown manifest format: expected 'formatVersion' (Modrinth) "
-                + "or 'version'+'modFiles' (Kerong). Raw keys: " + root.keySet());
+                + "or 'version'+file list (Kerong). Raw keys: " + root.keySet());
+    }
+
+    /** Kerong 清单可能仅含 configFiles/resourceFiles（无 modFiles），故任一文件列表存在即可识别。 */
+    private static boolean hasAnyKerongFileList(JsonObject root) {
+        return root.has("modFiles") || root.has("ModFiles")
+                || root.has("configFiles") || root.has("ConfigFiles")
+                || root.has("resourceFiles") || root.has("ResourceFiles");
     }
 
     private Map<String, Path> listExistingMods() throws IOException {
