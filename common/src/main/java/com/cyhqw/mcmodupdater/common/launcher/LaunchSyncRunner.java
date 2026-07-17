@@ -79,12 +79,13 @@ public final class LaunchSyncRunner {
         }
 
         if (check.fetchFailed()) {
+            ModLog.info("[LaunchSync] Fetch failed, calling handleFetchError");
             return handleFetchError(config, configPath, check.errorMessage, modsLabel);
         }
 
         // 不需要更新
         if (!check.needUpdate) {
-            ModLog.info("[LaunchSync] Already up-to-date (local=%s remote=%s).",
+            ModLog.info("[LaunchSync] Already up-to-date (local=%s remote=%s). Calling showAutoClose.",
                     check.localVersionId, check.remoteVersionId);
             if (!check.remoteVersionId.isEmpty()
                     && !check.remoteVersionId.equals(config.currentVersionId)) {
@@ -200,15 +201,21 @@ public final class LaunchSyncRunner {
                 java.lang.reflect.Field f = tkClass.getDeclaredField("toolkit");
                 f.setAccessible(true);
                 f.set(null, null);
+                ModLog.info("[LaunchSync] Reset Toolkit.toolkit OK");
             } catch (NoSuchFieldException nsfe) {
-                // 尝试其它可能的名字
+                ModLog.info("[LaunchSync] Toolkit.toolkit field not found, trying defaultToolkit");
                 try {
                     Class<?> tkClass = Class.forName("java.awt.Toolkit");
                     java.lang.reflect.Field f = tkClass.getDeclaredField("defaultToolkit");
                     f.setAccessible(true);
                     f.set(null, null);
-                } catch (Exception ignored) {}
-            } catch (Exception ignored) {}
+                    ModLog.info("[LaunchSync] Reset Toolkit.defaultToolkit OK");
+                } catch (Exception e2) {
+                    ModLog.warn("[LaunchSync] Toolkit reset failed: %s: %s", e2.getClass().getSimpleName(), e2.getMessage());
+                }
+            } catch (Exception e) {
+                ModLog.warn("[LaunchSync] Toolkit.toolkit reset failed: %s: %s", e.getClass().getSimpleName(), e.getMessage());
+            }
 
             // 3. 反射重置 GraphicsEnvironment.headless 和 defaultHeadless 缓存字段
             try {
@@ -217,13 +224,25 @@ public final class LaunchSyncRunner {
                     java.lang.reflect.Field f = geClass.getDeclaredField("headless");
                     f.setAccessible(true);
                     f.set(null, Boolean.FALSE);
-                } catch (NoSuchFieldException ignored) {}
+                    ModLog.info("[LaunchSync] Reset GE.headless=FALSE OK");
+                } catch (NoSuchFieldException e) {
+                    ModLog.info("[LaunchSync] GE.headless field not found");
+                } catch (Exception e) {
+                    ModLog.warn("[LaunchSync] GE.headless reset failed: %s: %s", e.getClass().getSimpleName(), e.getMessage());
+                }
                 try {
                     java.lang.reflect.Field f = geClass.getDeclaredField("defaultHeadless");
                     f.setAccessible(true);
                     f.set(null, Boolean.FALSE);
-                } catch (NoSuchFieldException ignored) {}
-            } catch (Exception ignored) {}
+                    ModLog.info("[LaunchSync] Reset GE.defaultHeadless=FALSE OK");
+                } catch (NoSuchFieldException e) {
+                    ModLog.info("[LaunchSync] GE.defaultHeadless field not found");
+                } catch (Exception e) {
+                    ModLog.warn("[LaunchSync] GE.defaultHeadless reset failed: %s: %s", e.getClass().getSimpleName(), e.getMessage());
+                }
+            } catch (Exception e) {
+                ModLog.warn("[LaunchSync] GE class lookup failed: %s", e.getMessage());
+            }
 
             // 4. 验证：尝试创建 GraphicsEnvironment
             java.awt.GraphicsEnvironment ge = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment();
@@ -323,34 +342,36 @@ public final class LaunchSyncRunner {
         }
 
         /**
-         * 显示一个弹窗，指定毫秒后自动关闭。在新线程中执行，不阻塞调用线程。
-         * 用法和 show() 一样，只是多了定时自动关闭。
+         * 显示一个弹窗，指定毫秒后自动关闭。
+         * 不用 invokeAndWait——直接在调用线程上创建 dialog 并 setVisible，
+         * 和 show() 的 fallback 路径完全一致（showMessageDialog 内部也是这么做的）。
+         * setVisible(true) 会启动嵌套事件循环，Timer 事件能在其中被处理。
          */
         static void showAutoClose(String title, String message, int messageType, int delayMs) {
-            Thread t = new Thread(() -> {
+            ModLog.info("[LaunchSync] showAutoClose: called (headless=%s, thread=%s)",
+                    java.awt.GraphicsEnvironment.isHeadless(), Thread.currentThread().getName());
+            try {
+                javax.swing.JOptionPane pane = new javax.swing.JOptionPane(message, messageType);
+                javax.swing.JDialog dialog = pane.createDialog(title);
+                dialog.setDefaultCloseOperation(javax.swing.JDialog.DISPOSE_ON_CLOSE);
+                javax.swing.Timer timer = new javax.swing.Timer(delayMs, e -> {
+                    ModLog.info("[LaunchSync] showAutoClose: timer fired, disposing dialog");
+                    dialog.dispose();
+                });
+                timer.setRepeats(false);
+                timer.start();
+                ModLog.info("[LaunchSync] showAutoClose: setVisible(true), will auto-close in %dms", delayMs);
+                dialog.setVisible(true);
+                ModLog.info("[LaunchSync] showAutoClose: dialog closed");
+            } catch (Exception e) {
+                ModLog.warn("[LaunchSync] showAutoClose: dialog failed: %s", e.toString());
+                // fallback: 和 show() 完全一样，直接调 showMessageDialog
                 try {
-                    javax.swing.SwingUtilities.invokeAndWait(() -> {
-                        javax.swing.JOptionPane pane = new javax.swing.JOptionPane(
-                                message, messageType);
-                        javax.swing.JDialog dialog = pane.createDialog(title);
-                        dialog.setDefaultCloseOperation(javax.swing.JDialog.DISPOSE_ON_CLOSE);
-                        javax.swing.Timer timer = new javax.swing.Timer(delayMs, e -> dialog.dispose());
-                        timer.setRepeats(false);
-                        timer.start();
-                        dialog.setVisible(true);
-                    });
-                } catch (Exception e) {
-                    ModLog.warn("[LaunchSync] showAutoClose failed: %s", e.getMessage());
-                    // 回退：直接用 show()
-                    try {
-                        javax.swing.SwingUtilities.invokeAndWait(() ->
-                                javax.swing.JOptionPane.showMessageDialog(null, message, title, messageType));
-                    } catch (Exception ignored) {}
+                    javax.swing.JOptionPane.showMessageDialog(null, message, title, messageType);
+                } catch (Exception e2) {
+                    ModLog.warn("[LaunchSync] showAutoClose: fallback also failed: %s", e2.toString());
                 }
-            }, "up-to-date-dialog");
-            t.setDaemon(true);
-            t.start();
-            try { t.join(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            }
         }
     }
 }
