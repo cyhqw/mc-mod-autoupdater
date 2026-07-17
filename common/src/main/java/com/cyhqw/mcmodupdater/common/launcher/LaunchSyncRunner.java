@@ -6,6 +6,7 @@ import com.cyhqw.mcmodupdater.common.util.ModLog;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 /**
  * 启动同步流程：在游戏加载前阻塞地检查 manifest 版本、必要时弹窗 + 同步、
@@ -293,25 +294,34 @@ public final class LaunchSyncRunner {
          */
         private static void spawnDialogProcess(String mode, String title, String message,
                                                 int delayMs, int messageType) {
-            ModLog.info("[LaunchSync] Spawning dialog subprocess: mode=%s title=%s delayMs=%d",
-                    mode, title, delayMs);
+            ModLog.info("[LaunchSync] Spawning dialog subprocess: mode=%s delayMs=%d", mode, delayMs);
             try {
                 String javaBin = getJavaBinary();
                 String jarPath = getOurJarPath();
+                ModLog.info("[LaunchSync] java=%s jar=%s", javaBin, jarPath);
                 if (javaBin == null || jarPath == null) {
                     ModLog.warn("[LaunchSync] Cannot spawn dialog: java=%s jar=%s", javaBin, jarPath);
                     return;
                 }
 
-                ProcessBuilder pb = new ProcessBuilder(
-                        javaBin,
-                        "-Djava.awt.headless=false",
-                        "-cp", jarPath,
-                        "com.cyhqw.mcmodupdater.common.launcher.DialogMain",
-                        mode, title, message,
-                        String.valueOf(delayMs),
-                        String.valueOf(messageType)
-                );
+                List<String> cmd = new java.util.ArrayList<>();
+                cmd.add(javaBin);
+                cmd.add("-Djava.awt.headless=false");
+                // 在 Windows 上指定输出编码为 UTF-8，避免乱码
+                cmd.add("-Dstdout.encoding=UTF-8");
+                cmd.add("-Dstderr.encoding=UTF-8");
+                cmd.add("-cp");
+                cmd.add(jarPath);
+                cmd.add("com.cyhqw.mcmodupdater.common.launcher.DialogMain");
+                cmd.add(mode);
+                cmd.add(title);
+                cmd.add(message);
+                cmd.add(String.valueOf(delayMs));
+                cmd.add(String.valueOf(messageType));
+
+                ModLog.info("[LaunchSync] Command: %s", String.join(" ", cmd));
+
+                ProcessBuilder pb = new ProcessBuilder(cmd);
                 pb.redirectErrorStream(true);
                 Process p = pb.start();
 
@@ -320,6 +330,7 @@ public final class LaunchSyncRunner {
                     try {
                         byte[] out = p.getInputStream().readAllBytes();
                         if (out.length > 0) {
+                            // 尝试 UTF-8，回退到系统默认编码
                             String text = new String(out, java.nio.charset.StandardCharsets.UTF_8).trim();
                             if (!text.isEmpty()) {
                                 ModLog.info("[LaunchSync] Dialog subprocess output: %s", text);
@@ -355,16 +366,81 @@ public final class LaunchSyncRunner {
             return f.exists() ? f.getAbsolutePath() : null;
         }
 
-        /** 获取当前 jar 文件路径，用于子进程 classpath。 */
+        /**
+         * 获取当前 jar 文件路径，用于子进程 classpath。
+         * 多种方式尝试，确保 Windows/Linux 都能正确获取路径。
+         */
         private static String getOurJarPath() {
+            // 方式 1：通过 ProtectionDomain CodeSource
             try {
                 java.security.CodeSource cs = LaunchSyncRunner.class.getProtectionDomain().getCodeSource();
-                if (cs == null || cs.getLocation() == null) return null;
-                return cs.getLocation().toURI().getPath();
+                if (cs != null && cs.getLocation() != null) {
+                    java.net.URL url = cs.getLocation();
+                    ModLog.info("[LaunchSync] CodeSource URL: %s", url);
+                    // 用 File(url.toURI()) 而不是 url.toURI().getPath()，
+                    // 前者正确处理 Windows 路径 (去掉前导 /)
+                    java.io.File file = new java.io.File(url.toURI());
+                    if (file.exists()) {
+                        ModLog.info("[LaunchSync] Jar found via CodeSource: %s", file.getAbsolutePath());
+                        return file.getAbsolutePath();
+                    }
+                    ModLog.warn("[LaunchSync] CodeSource file does not exist: %s", file.getAbsolutePath());
+                }
             } catch (Exception e) {
-                ModLog.warn("[LaunchSync] Cannot find own jar path: %s", e.getMessage());
-                return null;
+                ModLog.warn("[LaunchSync] CodeSource method failed: %s", e.getMessage());
             }
+
+            // 方式 2：通过 class resource URL
+            try {
+                String className = LaunchSyncRunner.class.getName().replace('.', '/') + ".class";
+                java.net.URL url = LaunchSyncRunner.class.getClassLoader().getResource(className);
+                if (url != null) {
+                    ModLog.info("[LaunchSync] Class resource URL: %s", url);
+                    // URL 格式：jar:file:/path/to/jar!/com/.../Class.class
+                    String urlStr = url.toString();
+                    if (urlStr.startsWith("jar:")) {
+                        // 提取 jar 路径
+                        int idx = urlStr.indexOf("!/");
+                        if (idx > 0) {
+                            String jarUrl = urlStr.substring(4, idx); // 去掉 "jar:" 和 "!/"
+                            java.io.File file = new java.io.File(new java.net.URI(jarUrl));
+                            if (file.exists()) {
+                                ModLog.info("[LaunchSync] Jar found via resource URL: %s", file.getAbsolutePath());
+                                return file.getAbsolutePath();
+                            }
+                        }
+                    } else if (urlStr.startsWith("file:")) {
+                        // 可能在开发环境（classes 目录）
+                        java.io.File file = new java.io.File(url.toURI());
+                        // 找上级直到 jar 目录——开发环境直接用 classpath
+                        ModLog.info("[LaunchSync] Dev environment detected, class dir: %s", file);
+                    }
+                }
+            } catch (Exception e) {
+                ModLog.warn("[LaunchSync] Resource URL method failed: %s", e.getMessage());
+            }
+
+            // 方式 3：在 mods 目录搜索 mc-mod-autoupdater*.jar
+            try {
+                String gameDir = System.getProperty("user.dir");
+                if (gameDir != null) {
+                    java.io.File modsDir = new java.io.File(gameDir, "mods");
+                    if (modsDir.exists() && modsDir.isDirectory()) {
+                        ModLog.info("[LaunchSync] Searching mods dir: %s", modsDir.getAbsolutePath());
+                        java.io.File[] jars = modsDir.listFiles((dir, name) ->
+                                name.toLowerCase().contains("mc-mod-autoupdater") && name.toLowerCase().endsWith(".jar"));
+                        if (jars != null && jars.length > 0) {
+                            ModLog.info("[LaunchSync] Jar found via mods dir search: %s", jars[0].getAbsolutePath());
+                            return jars[0].getAbsolutePath();
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                ModLog.warn("[LaunchSync] Mods dir search failed: %s", e.getMessage());
+            }
+
+            ModLog.warn("[LaunchSync] Could not find own jar path by any method");
+            return null;
         }
     }
 }
