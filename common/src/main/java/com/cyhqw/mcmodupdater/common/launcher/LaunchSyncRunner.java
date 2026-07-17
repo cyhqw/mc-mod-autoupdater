@@ -186,7 +186,8 @@ public final class LaunchSyncRunner {
     /**
      * 强制解除 AWT headless 模式。
      * Minecraft 在 modloading 阶段会设 java.awt.headless=true，
-     * 这里通过反射重置 Toolkit 和 GraphicsEnvironment 的缓存字段。
+     * Java 17 模块系统会阻止普通反射 (InaccessibleObjectException)，
+     * 因此使用 sun.misc.Unsafe 直接操作内存绕过模块限制。
      *
      * @return true 如果 Swing 可用（headless 已解除）
      */
@@ -195,68 +196,123 @@ public final class LaunchSyncRunner {
             // 1. 设置系统属性
             System.setProperty("java.awt.headless", "false");
 
-            // 2. 反射重置 Toolkit.toolkit 缓存字段（Java 17/21 中字段名是 "toolkit"）
-            try {
-                Class<?> tkClass = Class.forName("java.awt.Toolkit");
-                java.lang.reflect.Field f = tkClass.getDeclaredField("toolkit");
-                f.setAccessible(true);
-                f.set(null, null);
-                ModLog.info("[LaunchSync] Reset Toolkit.toolkit OK");
-            } catch (NoSuchFieldException nsfe) {
-                ModLog.info("[LaunchSync] Toolkit.toolkit field not found, trying defaultToolkit");
-                try {
-                    Class<?> tkClass = Class.forName("java.awt.Toolkit");
-                    java.lang.reflect.Field f = tkClass.getDeclaredField("defaultToolkit");
-                    f.setAccessible(true);
-                    f.set(null, null);
-                    ModLog.info("[LaunchSync] Reset Toolkit.defaultToolkit OK");
-                } catch (Exception e2) {
-                    ModLog.warn("[LaunchSync] Toolkit reset failed: %s: %s", e2.getClass().getSimpleName(), e2.getMessage());
-                }
-            } catch (Exception e) {
-                ModLog.warn("[LaunchSync] Toolkit.toolkit reset failed: %s: %s", e.getClass().getSimpleName(), e.getMessage());
+            // 2. 尝试普通反射；如果失败（Java 17 模块限制），用 Unsafe 绕过
+            boolean regularReflectionWorked = tryResetHeadlessViaReflection();
+            if (!regularReflectionWorked) {
+                ModLog.info("[LaunchSync] Regular reflection blocked, trying Unsafe approach");
+                tryResetHeadlessViaUnsafe();
             }
 
-            // 3. 反射重置 GraphicsEnvironment.headless 和 defaultHeadless 缓存字段
-            try {
-                Class<?> geClass = Class.forName("java.awt.GraphicsEnvironment");
-                try {
-                    java.lang.reflect.Field f = geClass.getDeclaredField("headless");
-                    f.setAccessible(true);
-                    f.set(null, Boolean.FALSE);
-                    ModLog.info("[LaunchSync] Reset GE.headless=FALSE OK");
-                } catch (NoSuchFieldException e) {
-                    ModLog.info("[LaunchSync] GE.headless field not found");
-                } catch (Exception e) {
-                    ModLog.warn("[LaunchSync] GE.headless reset failed: %s: %s", e.getClass().getSimpleName(), e.getMessage());
-                }
-                try {
-                    java.lang.reflect.Field f = geClass.getDeclaredField("defaultHeadless");
-                    f.setAccessible(true);
-                    f.set(null, Boolean.FALSE);
-                    ModLog.info("[LaunchSync] Reset GE.defaultHeadless=FALSE OK");
-                } catch (NoSuchFieldException e) {
-                    ModLog.info("[LaunchSync] GE.defaultHeadless field not found");
-                } catch (Exception e) {
-                    ModLog.warn("[LaunchSync] GE.defaultHeadless reset failed: %s: %s", e.getClass().getSimpleName(), e.getMessage());
-                }
-            } catch (Exception e) {
-                ModLog.warn("[LaunchSync] GE class lookup failed: %s", e.getMessage());
-            }
-
-            // 4. 验证：尝试创建 GraphicsEnvironment
+            // 3. 验证
             java.awt.GraphicsEnvironment ge = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment();
             boolean headless = ge.isHeadless();
             ModLog.info("[LaunchSync] AWT headless=%s, ge=%s", headless, ge.getClass().getSimpleName());
             if (headless) {
-                // headless 仍为 true，反射没生效
-                ModLog.warn("[LaunchSync] headless still true after reflection. Swing dialogs will fail.");
+                ModLog.warn("[LaunchSync] headless still true. Swing dialogs will fail.");
                 return false;
             }
             return true;
         } catch (Throwable t) {
             ModLog.warn("[LaunchSync] forceEnableAwt failed: %s", t.getMessage());
             return false;
+        }
+    }
+
+    /** 普通反射方式重置 headless 字段。返回 true 表示成功。 */
+    private static boolean tryResetHeadlessViaReflection() {
+        boolean ok = true;
+        try {
+            Class<?> tkClass = Class.forName("java.awt.Toolkit");
+            java.lang.reflect.Field f = tkClass.getDeclaredField("toolkit");
+            f.setAccessible(true);
+            f.set(null, null);
+            ModLog.info("[LaunchSync] Reflection: Reset Toolkit.toolkit=null OK");
+        } catch (Exception e) {
+            ModLog.info("[LaunchSync] Reflection: Toolkit reset blocked (%s)", e.getClass().getSimpleName());
+            ok = false;
+        }
+        try {
+            Class<?> geClass = Class.forName("java.awt.GraphicsEnvironment");
+            java.lang.reflect.Field f = geClass.getDeclaredField("headless");
+            f.setAccessible(true);
+            f.set(null, Boolean.FALSE);
+            ModLog.info("[LaunchSync] Reflection: Reset GE.headless=false OK");
+        } catch (Exception e) {
+            ModLog.info("[LaunchSync] Reflection: GE.headless blocked (%s)", e.getClass().getSimpleName());
+            ok = false;
+        }
+        try {
+            Class<?> geClass = Class.forName("java.awt.GraphicsEnvironment");
+            java.lang.reflect.Field f = geClass.getDeclaredField("defaultHeadless");
+            f.setAccessible(true);
+            f.set(null, Boolean.FALSE);
+            ModLog.info("[LaunchSync] Reflection: Reset GE.defaultHeadless=false OK");
+        } catch (Exception e) {
+            ModLog.info("[LaunchSync] Reflection: GE.defaultHeadless blocked (%s)", e.getClass().getSimpleName());
+            ok = false;
+        }
+        return ok;
+    }
+
+    /**
+     * 用 sun.misc.Unsafe 绕过 Java 17 模块系统，直接操作内存重置 headless 字段。
+     * Unsafe 在 jdk.unsupported 模块中，不受模块限制，
+     * staticFieldOffset / putBoolean / putObject 不检查访问权限。
+     */
+    @SuppressWarnings("removal")
+    private static void tryResetHeadlessViaUnsafe() {
+        try {
+            // 获取 Unsafe 实例
+            Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+            java.lang.reflect.Field theUnsafe = unsafeClass.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            sun.misc.Unsafe unsafe = (sun.misc.Unsafe) theUnsafe.get(null);
+            ModLog.info("[LaunchSync] Unsafe: obtained instance OK");
+
+            // 重置 GraphicsEnvironment.headless = false
+            resetStaticBooleanViaUnsafe(unsafe, "java.awt.GraphicsEnvironment", "headless", false);
+            // 重置 GraphicsEnvironment.defaultHeadless = false
+            resetStaticBooleanViaUnsafe(unsafe, "java.awt.GraphicsEnvironment", "defaultHeadless", false);
+            // 重置 GraphicsEnvironment.localEnv = null（强制重新创建非 headless 实例）
+            resetStaticObjectViaUnsafe(unsafe, "java.awt.GraphicsEnvironment", "localEnv", null);
+            // 重置 Toolkit.toolkit = null（强制重新创建非 headless 实例）
+            resetStaticObjectViaUnsafe(unsafe, "java.awt.Toolkit", "toolkit", null);
+
+        } catch (Exception e) {
+            ModLog.warn("[LaunchSync] Unsafe approach failed: %s: %s", e.getClass().getSimpleName(), e.getMessage());
+        }
+    }
+
+    private static void resetStaticBooleanViaUnsafe(sun.misc.Unsafe unsafe,
+            String className, String fieldName, boolean value) {
+        try {
+            Class<?> clazz = Class.forName(className);
+            java.lang.reflect.Field f = clazz.getDeclaredField(fieldName);
+            // Unsafe 不需要 setAccessible！直接获取偏移量
+            long offset = unsafe.staticFieldOffset(f);
+            Object base = unsafe.staticFieldBase(f);
+            unsafe.putBoolean(base, offset, value);
+            ModLog.info("[LaunchSync] Unsafe: set %s.%s=%s OK", className, fieldName, value);
+        } catch (NoSuchFieldException e) {
+            ModLog.info("[LaunchSync] Unsafe: %s.%s field not found", className, fieldName);
+        } catch (Exception e) {
+            ModLog.warn("[LaunchSync] Unsafe: %s.%s failed: %s", className, fieldName, e.getMessage());
+        }
+    }
+
+    private static void resetStaticObjectViaUnsafe(sun.misc.Unsafe unsafe,
+            String className, String fieldName, Object value) {
+        try {
+            Class<?> clazz = Class.forName(className);
+            java.lang.reflect.Field f = clazz.getDeclaredField(fieldName);
+            long offset = unsafe.staticFieldOffset(f);
+            Object base = unsafe.staticFieldBase(f);
+            unsafe.putObject(base, offset, value);
+            ModLog.info("[LaunchSync] Unsafe: set %s.%s=%s OK", className, fieldName, value);
+        } catch (NoSuchFieldException e) {
+            ModLog.info("[LaunchSync] Unsafe: %s.%s field not found", className, fieldName);
+        } catch (Exception e) {
+            ModLog.warn("[LaunchSync] Unsafe: %s.%s failed: %s", className, fieldName, e.getMessage());
         }
     }
 
