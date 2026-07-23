@@ -144,7 +144,7 @@ public final class LaunchSyncRunner {
             }
             removeCount = diff.toRemove.size();
             confirmMsg.append(String.format("更新内容: 新增 %d / 更新 %d / 删除 %d\n\n", addCount, updateCount, removeCount));
-            confirmMsg.append("是否立即更新？\n（点击"否"将使用本地现有模组继续游戏）");
+            confirmMsg.append("是否立即更新？\n（点击「否」将使用本地现有模组继续游戏）");
 
             boolean confirmed = SimpleDialog.showConfirm(
                     "MC Mod Auto-Updater — " + modsLabel, confirmMsg.toString());
