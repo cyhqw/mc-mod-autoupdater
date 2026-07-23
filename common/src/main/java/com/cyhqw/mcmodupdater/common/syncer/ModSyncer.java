@@ -104,13 +104,14 @@ public final class ModSyncer {
         } else {
             needUpdate = !local.equals(remote);
             ModLog.info("Version check: local=%s remote=%s needUpdate=%s", local, remote, needUpdate);
-            // 版本号相同时，通过哈希校验检测文件内容是否被静默更新
-            if (!needUpdate && config.verifyHash) {
+            // 版本号相同时，通过哈希/文件大小校验检测文件内容是否被静默更新。
+            // 无论 verifyHash 设置如何都执行——否则网站静默更新文件内容时模组永远无法发现。
+            if (!needUpdate) {
                 String[] hashInfo = hasContentChanged(index);
                 boolean contentChanged = "true".equals(hashInfo[0]);
                 if (contentChanged) {
                     needUpdate = true;
-                    ModLog.info("Version matches (%s) but content hash mismatch detected, forcing update", remote);
+                    ModLog.info("Version matches (%s) but content mismatch detected, forcing update", remote);
                 }
                 return new CheckResult(index, remote, local, needUpdate, null, hashInfo[1], hashInfo[2]);
             }
@@ -126,7 +127,7 @@ public final class ModSyncer {
     private String[] hasContentChanged(ModrinthIndex index) {
         ManagedSelection selection = selectManagedFiles(index);
         int checked = 0, mismatched = 0, missing = 0;
-        boolean usedSha1 = false, usedMd5 = false;
+        boolean usedSha1 = false, usedMd5 = false, usedSize = false;
         for (ModrinthFile file : selection.files) {
             String relPath = normalizePath(file.path);
             Path target = gameDir.resolve(relPath).normalize();
@@ -144,11 +145,25 @@ public final class ModSyncer {
                 usedSha1 = true;
             } else {
                 remoteHash = file.md5();
-                if (remoteHash == null || remoteHash.isBlank()) {
+                if (remoteHash != null && !remoteHash.isBlank()) {
+                    algo = "md5";
+                    usedMd5 = true;
+                } else {
+                    // 无哈希时回退到文件大小检查，避免静默跳过
+                    algo = "size";
+                    usedSize = true;
+                    try {
+                        long localSize = Files.size(target);
+                        checked++;
+                        if (file.fileSize > 0 && localSize != file.fileSize) {
+                            mismatched++;
+                            ModLog.info("[ContentCheck] size mismatch: %s (local=%d remote=%d)",
+                                    relPath, localSize, file.fileSize);
+                        }
+                    } catch (IOException ignored) {
+                    }
                     continue;
                 }
-                algo = "md5";
-                usedMd5 = true;
             }
             try {
                 String localHash = "sha1".equals(algo) ? HashUtils.sha1(target) : HashUtils.md5(target);
@@ -162,11 +177,11 @@ public final class ModSyncer {
             }
         }
         boolean changed = missing > 0 || mismatched > 0;
-        String method;
-        if (usedSha1 && usedMd5) method = "SHA1+MD5";
-        else if (usedSha1) method = "SHA1";
-        else if (usedMd5) method = "MD5";
-        else method = "(无哈希)";
+        StringBuilder methodParts = new StringBuilder();
+        if (usedSha1) methodParts.append("SHA1");
+        if (usedMd5) methodParts.append(methodParts.length() > 0 ? "+MD5" : "MD5");
+        if (usedSize) methodParts.append(methodParts.length() > 0 ? "+Size" : "Size");
+        String method = methodParts.length() > 0 ? methodParts.toString() : "(无校验)";
         String summary = String.format("已校验 %d 个文件", checked)
                 + (missing > 0 ? String.format("，缺失 %d", missing) : "")
                 + (mismatched > 0 ? String.format("，不一致 %d", mismatched) : "")
@@ -457,26 +472,31 @@ public final class ModSyncer {
         if (Files.exists(target)) {
             try {
                 if (!config.verifyHash) {
-                    return new SyncAction(file, ActionStatus.SKIPPED, "exists, hash not verified");
-                }
-                boolean hashMatches = false;
-                if (expectedSha1 != null) {
-                    String localSha1 = HashUtils.sha1(target);
-                    hashMatches = localSha1.equalsIgnoreCase(expectedSha1);
-                } else if (expectedMd5 != null) {
-                    String localMd5 = HashUtils.md5(target);
-                    hashMatches = localMd5.equalsIgnoreCase(expectedMd5);
+                    // verifyHash=false 时仍需检查文件大小，防止版本号未变但文件内容已更新
+                    if (file.fileSize > 0 && Files.size(target) == file.fileSize) {
+                        return new SyncAction(file, ActionStatus.SKIPPED, "exists, size matches");
+                    }
+                    // 大小不匹配则继续下载
                 } else {
-                    return new SyncAction(file, ActionStatus.SKIPPED, "exists, no hash to verify");
-                }
-                if (hashMatches) {
-                    return new SyncAction(file, ActionStatus.SKIPPED, "hash matches");
-                }
-                if (config.backupOldMods) {
-                    Path bak = target.resolveSibling(target.getFileName() + ".bak");
-                    Files.move(target, bak, StandardCopyOption.REPLACE_EXISTING);
-                } else {
-                    Files.deleteIfExists(target);
+                    boolean hashMatches = false;
+                    if (expectedSha1 != null) {
+                        String localSha1 = HashUtils.sha1(target);
+                        hashMatches = localSha1.equalsIgnoreCase(expectedSha1);
+                    } else if (expectedMd5 != null) {
+                        String localMd5 = HashUtils.md5(target);
+                        hashMatches = localMd5.equalsIgnoreCase(expectedMd5);
+                    } else {
+                        return new SyncAction(file, ActionStatus.SKIPPED, "exists, no hash to verify");
+                    }
+                    if (hashMatches) {
+                        return new SyncAction(file, ActionStatus.SKIPPED, "hash matches");
+                    }
+                    if (config.backupOldMods) {
+                        Path bak = target.resolveSibling(target.getFileName() + ".bak");
+                        Files.move(target, bak, StandardCopyOption.REPLACE_EXISTING);
+                    } else {
+                        Files.deleteIfExists(target);
+                    }
                 }
             } catch (IOException e) {
                 return new SyncAction(file, ActionStatus.FAILED, "hash check failed: " + e.getMessage());
@@ -581,7 +601,7 @@ public final class ModSyncer {
     // ------------------------------------------------------------------
 
     private ModrinthIndex fetchManifest(String url) throws IOException, InterruptedException {
-        String body = HttpUtil.getString(url, config.effectiveHttpTimeoutMs(), 0);
+        String body = HttpUtil.getString(url, config.effectiveHttpTimeoutMs(), config.effectiveMaxRetries());
         JsonObject root = JsonParser.parseString(body).getAsJsonObject();
 
         if (root.has("formatVersion")) {
@@ -589,10 +609,10 @@ public final class ModSyncer {
         }
 
         // Kerong version.json 的顶层字段使用 PascalCase（Version/ModFiles/ConfigFiles/...），
-        // 个别旧版可能用 camelCase，故 size/version 均做大小写不敏感检测。
-        if (hasKeyIgnoreCase(root, "version", "Version") && hasAnyKerongFileList(root)) {
+        // 个别旧版可能用 camelCase，故对键名做大小写不敏感检测。
+        if (hasKeyIgnoreCase(root, "version") && hasAnyKerongFileList(root)) {
             KerongManifest kerong = GSON.fromJson(root, KerongManifest.class);
-            ModLog.info("[Manifest] Detected Kerong-style manifest (version=%d, name=%s, modFiles=%d, configFiles=%d, resourceFiles=%d)",
+            ModLog.info("[Manifest] Detected Kerong-style manifest (version=%s, name=%s, modFiles=%d, configFiles=%d, resourceFiles=%d)",
                     kerong.version, kerong.versionName,
                     kerong.modFiles != null ? kerong.modFiles.size() : 0,
                     kerong.configFiles != null ? kerong.configFiles.size() : 0,
@@ -606,16 +626,22 @@ public final class ModSyncer {
 
     /** Kerong 清单可能仅含 configFiles/resourceFiles（无 modFiles），故任一文件列表存在即可识别。 */
     private static boolean hasAnyKerongFileList(JsonObject root) {
-        return hasKeyIgnoreCase(root, "modFiles", "ModFiles")
-                || hasKeyIgnoreCase(root, "configFiles", "ConfigFiles")
-                || hasKeyIgnoreCase(root, "resourceFiles", "ResourceFiles");
+        return hasKeyIgnoreCase(root, "modfiles")
+                || hasKeyIgnoreCase(root, "configfiles")
+                || hasKeyIgnoreCase(root, "resourcefiles");
     }
 
-    /** 检查 JsonObject 是否含有任意一个指定 key（精确匹配，大小写敏感）。 */
+    /**
+     * 大小写不敏感地检查 JsonObject 是否包含指定的任一键。
+     * 遍历所有键与目标键做 toLowerCase 比较，兼容 PascalCase/camelCase/全小写等各种写法。
+     */
     private static boolean hasKeyIgnoreCase(JsonObject root, String... keys) {
         for (String key : keys) {
-            if (root.has(key)) {
-                return true;
+            String lowerKey = key.toLowerCase(java.util.Locale.ROOT);
+            for (String existingKey : root.keySet()) {
+                if (existingKey.toLowerCase(java.util.Locale.ROOT).equals(lowerKey)) {
+                    return true;
+                }
             }
         }
         return false;

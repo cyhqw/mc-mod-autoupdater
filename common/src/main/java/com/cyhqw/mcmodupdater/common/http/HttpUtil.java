@@ -106,6 +106,8 @@ public final class HttpUtil {
                 .timeout(Duration.ofMillis(timeoutMs > 0 ? timeoutMs : Constants.HTTP_TIMEOUT_MS))
                 .header("User-Agent", Constants.HTTP_USER_AGENT)
                 .header("Accept", "application/json")
+                .header("Cache-Control", "no-cache, no-store, max-age=0")
+                .header("Pragma", "no-cache")
                 .GET();
     }
 

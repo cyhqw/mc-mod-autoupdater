@@ -44,7 +44,7 @@ public final class KerongManifestAdapter {
         ModrinthIndex index = new ModrinthIndex();
 
         // versionId: Kerong 使用整数版本号，转为字符串以兼容
-        index.versionId = String.valueOf(kerong.version);
+        index.versionId = kerong.version != null ? String.valueOf(kerong.version) : "";
 
         // name: Kerong 使用 versionName 作为显示名
         index.name = kerong.versionName != null ? kerong.versionName : "";

@@ -27,8 +27,12 @@ import java.util.List;
  */
 public final class KerongManifest {
 
+    /**
+     * 版本号。Kerong 当前返回整数（如 11），但使用 Number 类型以兼容
+     * 未来可能的字符串/浮点变化。适配时通过 {@code String.valueOf()} 转为字符串。
+     */
     @SerializedName(value = "version", alternate = { "Version" })
-    public int version;
+    public Number version;
 
     @SerializedName(value = "versionName", alternate = { "VersionName" })
     public String versionName;
