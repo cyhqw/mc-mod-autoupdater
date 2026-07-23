@@ -676,6 +676,8 @@ public final class ModSyncer {
     private ManagedSelection selectManagedFiles(ModrinthIndex index) {
         Set<String> skip = config.skipModsSet();
         Set<String> only = config.onlyModsSet();
+        // 编译 skipModsRegex 中的正则表达式
+        List<java.util.regex.Pattern> skipRegexPatterns = compileSkipModsRegex();
         List<ModrinthFile> selected = new ArrayList<>();
         Set<String> expectedRelPathKeys = new HashSet<>();
         int skippedByFilter = 0;
@@ -691,7 +693,7 @@ public final class ModSyncer {
                 continue;
             }
             String key = lower(relPath);
-            // skip/only 过滤仅针对 mods/ 下的文件（黑/白名单设计时仅考虑 mod）
+            // skip/only/regex 过滤仅针对 mods/ 下的文件（黑/白名单设计时仅考虑 mod）
             if (relPath.startsWith("mods/")) {
                 String filename = file.fileName();
                 String filenameKey = lower(filename);
@@ -703,12 +705,51 @@ public final class ModSyncer {
                     skippedByFilter++;
                     continue;
                 }
+                // 正则排除：开发者选项，匹配文件名（不含路径）
+                if (!skipRegexPatterns.isEmpty()) {
+                    boolean regexMatched = false;
+                    for (java.util.regex.Pattern p : skipRegexPatterns) {
+                        if (p.matcher(filename).find()) {
+                            regexMatched = true;
+                            break;
+                        }
+                    }
+                    if (regexMatched) {
+                        skippedByFilter++;
+                        ModLog.info("[Sync] Skipping mod by regex: %s", filename);
+                        continue;
+                    }
+                }
             }
             expectedRelPathKeys.add(key);
             selected.add(file);
         }
 
         return new ManagedSelection(selected, index.files, expectedRelPathKeys, skippedByFilter, skippedByEnv);
+    }
+
+    /**
+     * 编译 config.skipModsRegex 中的正则表达式列表。
+     * 逗号分隔，每个部分是一个独立的正则表达式。
+     * 无效的正则会被跳过并记录日志。
+     */
+    private List<java.util.regex.Pattern> compileSkipModsRegex() {
+        if (config.skipModsRegex == null || config.skipModsRegex.isBlank()) {
+            return java.util.Collections.emptyList();
+        }
+        List<java.util.regex.Pattern> patterns = new java.util.ArrayList<>();
+        for (String part : config.skipModsRegex.split(",")) {
+            String trimmed = part.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            try {
+                patterns.add(java.util.regex.Pattern.compile(trimmed));
+            } catch (java.util.regex.PatternSyntaxException e) {
+                ModLog.warn("[Sync] Invalid skipModsRegex pattern '%s': %s", trimmed, e.getMessage());
+            }
+        }
+        return patterns;
     }
 
     // ------------------------------------------------------------------

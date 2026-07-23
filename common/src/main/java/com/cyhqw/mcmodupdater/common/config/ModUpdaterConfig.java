@@ -80,6 +80,14 @@ public final class ModUpdaterConfig {
     /** 黑名单：跳过指定 mod 文件名（逗号分隔，不带路径）。这些文件不会被下载/更新。 */
     public String skipMods = "";
 
+    /**
+     * 开发者选项：正则排除模组。逗号分隔的正则表达式列表，
+     * 匹配文件名（不含路径）的文件将不会被下载/更新。
+     * 例如："openysm.*,^jei-.*,create-.*"
+     * 留空表示不排除任何模组。
+     */
+    public String skipModsRegex = "";
+
     /** 白名单：仅同步这些 mod 文件名（逗号分隔）。为空则不过滤。 */
     public String onlyMods = "";
 
@@ -108,6 +116,7 @@ public final class ModUpdaterConfig {
         c.maxRetries = parseInt(props, "maxRetries", c.maxRetries);
         c.promptRestart = parseBool(props, "promptRestart", c.promptRestart);
         c.skipMods = props.getProperty("skipMods", c.skipMods);
+        c.skipModsRegex = props.getProperty("skipModsRegex", c.skipModsRegex);
         c.onlyMods = props.getProperty("onlyMods", c.onlyMods);
         return c;
     }
@@ -126,6 +135,7 @@ public final class ModUpdaterConfig {
         props.setProperty("maxRetries", String.valueOf(maxRetries));
         props.setProperty("promptRestart", String.valueOf(promptRestart));
         props.setProperty("skipMods", skipMods);
+        props.setProperty("skipModsRegex", skipModsRegex);
         props.setProperty("onlyMods", onlyMods);
 
         Files.createDirectories(configPath.getParent());

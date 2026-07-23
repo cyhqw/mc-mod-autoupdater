@@ -125,14 +125,39 @@ public final class LaunchSyncRunner {
                 ? check.manifest.name : "(未命名整合包)";
 
         if (!swingReady) {
-            // Swing 不可用，回退到日志模式：直接同步，不弹窗
-            ModLog.warn("[LaunchSync] Swing not available, auto-syncing without dialog (firstRun=%s)",
+            // Swing 不可用 → 通过子进程弹窗确认，绝不静默同步
+            ModLog.info("[LaunchSync] Swing not available, using subprocess confirm dialog (firstRun=%s)",
                     check.localVersionId.isEmpty());
             ModLog.info("[LaunchSync] Diff: %d to download, %d to keep, %d to remove",
                     diff.toDownload.size(), diff.toKeep.size(), diff.toRemove.size());
+
+            // 构建确认信息
+            StringBuilder confirmMsg = new StringBuilder();
+            confirmMsg.append(String.format("检测到整合包更新！\n\n整合包: %s\n本地版本: %s → 远端版本: %s\n\n",
+                    modpackName,
+                    check.localVersionId.isEmpty() ? "(首次安装)" : check.localVersionId,
+                    check.remoteVersionId.isEmpty() ? "(未声明)" : check.remoteVersionId));
+            int addCount = 0, updateCount = 0, removeCount = 0;
             for (ModSyncer.DiffEntry e : diff.toDownload) {
-                ModLog.info("[LaunchSync]   %s: %s", e.action, e.filename);
+                if (e.action == ModSyncer.DiffAction.ADD) addCount++;
+                else if (e.action == ModSyncer.DiffAction.UPDATE) updateCount++;
             }
+            removeCount = diff.toRemove.size();
+            confirmMsg.append(String.format("更新内容: 新增 %d / 更新 %d / 删除 %d\n\n", addCount, updateCount, removeCount));
+            confirmMsg.append("是否立即更新？\n（点击"否"将使用本地现有模组继续游戏）");
+
+            boolean confirmed = SimpleDialog.showConfirm(
+                    "MC Mod Auto-Updater — " + modsLabel, confirmMsg.toString());
+            if (!confirmed) {
+                ModLog.info("[LaunchSync] User declined update via subprocess dialog. Continuing with local mods.");
+                SimpleDialog.showAutoClose("MC Mod Auto-Updater — " + modsLabel,
+                        "已取消更新，使用本地模组继续。\n如需修改开发者选项，请使用 config 模式。",
+                        javax.swing.JOptionPane.INFORMATION_MESSAGE, 3000);
+                return LaunchSyncResult.userCancelled(check.remoteVersionId);
+            }
+
+            // 用户确认，开始同步
+            ModLog.info("[LaunchSync] User confirmed update. Starting sync...");
             ModSyncer.SyncResult result = syncer.sync(null);
             if (!result.failed && !result.remoteVersionId.isEmpty()) {
                 config.currentVersionId = result.remoteVersionId;
@@ -140,6 +165,20 @@ public final class LaunchSyncRunner {
             }
             ModLog.info("[LaunchSync] Sync done: %d downloaded, %d skipped, %d failed",
                     result.downloadedCount(), result.skippedCount(), result.failedCount());
+
+            // 显示同步结果
+            StringBuilder doneMsg = new StringBuilder();
+            if (result.failed) {
+                doneMsg.append(String.format("同步完成（有失败）！\n下载: %d\n跳过: %d\n失败: %d\n\n请查看日志了解详情。",
+                        result.downloadedCount(), result.skippedCount(), result.failedCount()));
+            } else if (result.changed) {
+                doneMsg.append(String.format("更新完成！\n下载: %d\n跳过: %d\n\n请重启游戏以应用更新。",
+                        result.downloadedCount(), result.skippedCount()));
+            } else {
+                doneMsg.append("所有文件已是最新，无需下载。");
+            }
+            SimpleDialog.show("MC Mod Auto-Updater — " + modsLabel,
+                    doneMsg.toString(), javax.swing.JOptionPane.INFORMATION_MESSAGE);
             return LaunchSyncResult.synced(result);
         }
 
@@ -153,14 +192,16 @@ public final class LaunchSyncRunner {
         try {
             confirmed = dialog.showAndAwaitConfirm();
         } catch (Exception e) {
-            ModLog.error("[LaunchSync] Dialog failed, falling back to auto-sync", e);
-            // 弹窗失败，回退到自动同步（不阻塞）
-            ModSyncer.SyncResult result = syncer.sync(null);
-            if (!result.failed && !result.remoteVersionId.isEmpty()) {
-                config.currentVersionId = result.remoteVersionId;
-                saveConfigQuietly(configPath, config);
-            }
-            return LaunchSyncResult.synced(result);
+            ModLog.error("[LaunchSync] In-process dialog failed, falling back to subprocess confirm", e);
+            // 弹窗失败 → 不自动同步，改为子进程确认
+            dialog.dispose();
+            String confirmMsg = String.format(
+                    "检测到整合包更新！\n\n整合包: %s\n本地版本: %s → 远端版本: %s\n\n更新内容: 新增/更新 %d, 删除 %d\n\n是否更新？",
+                    modpackName,
+                    check.localVersionId.isEmpty() ? "(首次安装)" : check.localVersionId,
+                    check.remoteVersionId.isEmpty() ? "(未声明)" : check.remoteVersionId,
+                    diff.toDownload.size(), diff.toRemove.size());
+            confirmed = SimpleDialog.showConfirm("MC Mod Auto-Updater — " + modsLabel, confirmMsg);
         }
 
         if (!confirmed) {
@@ -290,6 +331,77 @@ public final class LaunchSyncRunner {
 
         static void showAutoClose(String title, String message, int messageType, int delayMs) {
             spawnDialogProcess("autoclose", title, message, delayMs, messageType);
+        }
+
+        /**
+         * 显示确认对话框（是/否），阻塞等待用户选择。
+         * @return true=是, false=否
+         */
+        static boolean showConfirm(String title, String message) {
+            return spawnConfirmProcess(title, message);
+        }
+
+        /**
+         * 启动确认对话框子进程，返回用户选择。
+         * 退出码 0=是, 1=否, 2=异常。
+         */
+        private static boolean spawnConfirmProcess(String title, String message) {
+            ModLog.info("[LaunchSync] Spawning confirm dialog subprocess");
+            try {
+                String javaBin = getJavaBinary();
+                String jarPath = getOurJarPath();
+                if (javaBin == null || jarPath == null) {
+                    ModLog.warn("[LaunchSync] Cannot spawn confirm dialog: java=%s jar=%s", javaBin, jarPath);
+                    return false;
+                }
+
+                List<String> cmd = new java.util.ArrayList<>();
+                cmd.add(javaBin);
+                cmd.add("-Djava.awt.headless=false");
+                cmd.add("-Dstdout.encoding=UTF-8");
+                cmd.add("-Dstderr.encoding=UTF-8");
+                cmd.add("-cp");
+                cmd.add(jarPath);
+                cmd.add("com.cyhqw.mcmodupdater.common.launcher.DialogMain");
+                cmd.add("confirm");
+                cmd.add(title);
+                cmd.add(message);
+
+                ModLog.info("[LaunchSync] Command: %s", String.join(" ", cmd));
+
+                ProcessBuilder pb = new ProcessBuilder(cmd);
+                pb.redirectErrorStream(true);
+                Process p = pb.start();
+
+                // 后台读取输出
+                Thread outputReader = new Thread(() -> {
+                    try {
+                        byte[] out = p.getInputStream().readAllBytes();
+                        if (out.length > 0) {
+                            String text = new String(out, java.nio.charset.StandardCharsets.UTF_8).trim();
+                            if (!text.isEmpty()) {
+                                ModLog.info("[LaunchSync] Confirm dialog output: %s", text);
+                            }
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }, "confirm-dialog-reader");
+                outputReader.setDaemon(true);
+                outputReader.start();
+
+                boolean exited = p.waitFor(120000, java.util.concurrent.TimeUnit.MILLISECONDS);
+                if (!exited) {
+                    p.destroyForcibly();
+                    ModLog.warn("[LaunchSync] Confirm dialog timed out, treating as NO");
+                    return false;
+                }
+                int exitCode = p.exitValue();
+                ModLog.info("[LaunchSync] Confirm dialog exited with code %d", exitCode);
+                return exitCode == 0;
+            } catch (Exception e) {
+                ModLog.warn("[LaunchSync] Failed to spawn confirm dialog: %s", e.toString());
+                return false;
+            }
         }
 
         /**
